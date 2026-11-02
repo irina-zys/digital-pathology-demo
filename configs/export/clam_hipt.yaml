@@ -1,0 +1,7 @@
+# Bounded native-level-0 exports; no magnification harmonisation or embeddings.
+enabled: true
+patch_sizes: [256, 4096]
+max_patches: [128, 2]
+min_tissue_fraction: 0.6
+max_candidates: 200000
+save_region_tar: true

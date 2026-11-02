@@ -1,0 +1,18 @@
+defaults:
+  - _self_
+  - data: demo
+  - masking: tia_otsu
+  - artifacts: default
+  - export: clam_hipt
+  - optional local: default
+
+thumbnail:
+  max_size: 1024
+  max_read_pixels: 16000000
+  max_total_read_pixels: 100000000
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S-%f}
+  job:
+    chdir: false

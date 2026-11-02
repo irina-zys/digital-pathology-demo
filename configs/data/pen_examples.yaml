@@ -1,0 +1,3 @@
+paths: [data/demo/red-pen.png, data/demo/green-pen.png, data/demo/blue-pen.png]
+manifest: null
+max_slides: 3

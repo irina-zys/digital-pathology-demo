@@ -1,0 +1,8 @@
+# Heuristics for H&E previews; review excluded pixels before downstream use.
+pen_colors: [red, green, blue]
+remove_dark: true
+dark_threshold: 30
+remove_gray: false
+gray_tolerance: 15
+min_tissue_area: 64  # Connected-component area in thumbnail pixels; 0 disables.
+warn_removed_fraction: 0.25  # Fraction of candidate tissue, not whole image.

@@ -1,0 +1,7 @@
+# Independent implementation of the HSV/median/threshold/closing recipe.
+# Area thresholds are thumbnail pixels, not CLAM patch-area units.
+method: clam_saturation
+median_size: 7
+use_otsu: true
+saturation_threshold: 20
+closing_size: 3

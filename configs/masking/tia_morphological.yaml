@@ -1,0 +1,3 @@
+method: tia_morphological
+kernel_size: 3
+min_region_size: 64

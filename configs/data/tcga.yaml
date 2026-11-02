@@ -1,0 +1,3 @@
+paths: []
+manifest: manifests/tcga_demo.csv
+max_slides: 10

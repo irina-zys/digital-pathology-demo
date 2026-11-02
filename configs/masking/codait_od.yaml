@@ -1,0 +1,4 @@
+# Optical-density component only; not CODAIT's two-stage keep_tile algorithm.
+method: codait_od
+background_intensity: 240
+threshold: 0.15
