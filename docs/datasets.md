@@ -1,10 +1,10 @@
 # Demo datasets and QuPath
 
 [Quick start](../README.md) · [Preprocessing](preprocessing.md) ·
-[Annotation conversion](../scripts/convert_annotations.md)
+[Annotation conversion](annotation-conversion.md)
 
 Run commands from the repository root after `uv sync --locked`. Downloaders use
-the frozen public manifests and keep originals under `data/`. QuPath projects
+the TCGA/KPMP public manifests and keep originals under `data/`. QuPath projects
 reference those files; preprocessing layouts use symlinks. Neither workflow makes
 another WSI copy. Large data, download receipts and generated outputs stay out of
 Git. Keep manifests for reproducible selection and choose new run directories
@@ -96,6 +96,72 @@ Data are provided by the [Kidney Precision Medicine Project](https://www.kpmp.or
 Follow its [citation guidance](https://www.kpmp.org/help-docs/citing-kpmp-data)
 and [enrollment/adjudication definitions](https://www.kpmp.org/help-docs/adjudication-vs-enrollment)
 when interpreting or sharing the data.
+
+## Patch instance-segmentation datasets
+
+CytoNuke and NuInsSeg contain H&E image patches with object annotations. They
+support nucleus/cell instance-segmentation and annotation-conversion workflows,
+rather than the WSI-level classification examples above. Their coordinates belong
+to individual patch images; they are not registered annotations for the TCGA or
+KPMP WSIs in this project.
+
+Download the versioned releases below, compare archive checksums with the release
+records, and retain source archives, metadata and attribution under each dataset's
+`source/` directory. Extract into `extracted/`; these datasets have no project
+Hydra preprocessing profile or dedicated downloader. Existing local `index.csv`
+files pair inputs using paths relative to their dataset directory, while
+`validation.json` records preparation checks. Generated conversions belong under
+`outputs/annotations/`, leaving originals unchanged. See the
+[annotation-conversion guide](annotation-conversion.md) for bounded commands,
+GeoJSON/instance-TIFF exports and explicit overlap policies.
+
+### CytoNuke
+
+Acquire [CytoNuke v2](https://zenodo.org/records/15310323) and cite its dataset DOI
+and [Raufeisen et al. paper](https://doi.org/10.1016/j.cmpb.2024.108215).
+The release is CC BY 4.0 and contains 83 H&E PNG patches; the local index and
+COCO dimensions are 256 × 256 pixels. Preserve the release's CPTAC-HNSCC image
+attribution as well as the CytoNuke citation.
+
+- Images: `data/cytonuke/extracted/images/`.
+- Original polygon annotations: `data/cytonuke/extracted/coco.json`.
+- Image/annotation index and source records: `data/cytonuke/index.csv` and
+  `data/cytonuke/source/`.
+
+The COCO classes are **0 = NUCLEUS** and **1 = CELL**; category 0 is an object
+class, not background. Nucleus and whole-cell polygons overlap, and some
+annotations overlap within a class. Preserve polygons when overlap must remain
+explicit. Raster conversion writes separate category masks and requires a
+chosen policy for within-category overlap; a single flattened mask cannot retain
+all original overlapping instances.
+
+### NuInsSeg
+
+Acquire [NuInsSeg 1.0](https://zenodo.org/records/10518968) and cite its dataset DOI
+and [Mahbod et al. paper](https://doi.org/10.1038/s41597-024-03117-2).
+The saved official release metadata specifies CC BY 4.0. The local index contains
+665 H&E patches, each 512 × 512 pixels, from human and mouse tissue. This is a
+nuclei instance-segmentation dataset, not a whole-cell boundary dataset.
+
+Within `data/nuinsseg/extracted/<species tissue>/`, the paired inputs are:
+
+- `tissue images/`: original PNG images.
+- `label masks modify/`: recommended integer instance-label TIFFs.
+- `vague areas/mask binary/`: separate ambiguous-area masks.
+
+`data/nuinsseg/index.csv` pairs these files and retains the raw `label masks/`
+paths. Use **`label masks modify`** for evaluation, following the
+[authors' mask guidance](https://github.com/masih4/NuInsSeg/blob/554543db47faedc21d2fe6cea78827bfada6dec6/README.md#codes-to-generate-segmentation-masks).
+Raw label masks introduce additional numerical values where nuclei overlap;
+those values are not extra nuclei. In the modified masks, positive integer IDs
+identify individual nuclei and zero is background. Preserve integer IDs when
+loading or converting masks.
+
+Nonzero ambiguous-area pixels mark uncertain regions. Keep those masks paired
+with the images and state their treatment explicitly in evaluation; the converter
+does not automatically turn them into background or apply an ignore policy.
+Patch filenames do not establish independent patients, and this preparation
+creates no new train/test split or claim of biological annotation accuracy.
 
 ## Review small overviews
 

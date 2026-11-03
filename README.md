@@ -26,6 +26,17 @@ To inspect configuration without reading slides:
 uv run --locked python -m src.preprocess --cfg job --resolve
 ```
 
+## Why uv?
+
+[uv](https://docs.astral.sh/uv/concepts/projects/sync/) keeps this project's
+packages isolated in `.venv` and provides one workflow for setup and execution.
+`pyproject.toml` declares the Python and package requirements; the committed
+`uv.lock` records resolved versions, including indirect dependencies. Teammates
+can recreate the environment from these files instead of copying `.venv`.
+`uv sync --locked` and `uv run --locked` use that resolution and fail if the lock
+needs updating, helping prevent accidental dependency drift. `uv run` also selects
+the project environment without manual activation.
+
 ## Browse results
 
 ```sh
@@ -65,9 +76,10 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | --- | --- |
 | Understand Hydra and the code layout | [Hydra and project structure](docs/hydra-and-project-structure.md) |
 | Configure masking, tiling and outputs | [Preprocessing](docs/preprocessing.md) |
-| Download TCGA/KPMP slides and create QuPath projects | [Datasets](docs/datasets.md) |
-| Walk through metadata, masks, QC and optional stain comparisons | [MSc notebook](notebooks/wsi_preprocessing_msc.ipynb) |
-| Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](scripts/convert_annotations.md) |
+| Obtain datasets and create QuPath projects | [Datasets](docs/datasets.md) |
+| Walk through metadata, masks, QC and optional stain comparisons | [Introductory demo](notebooks/introductory_demo.ipynb) |
+| Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
+| Run Ruff and enable Git checks | [Linting and pre-commit hooks](docs/linting.md) |
 | Review upstream sources and licences | [Third-party attribution](third_party/README.md) |
 
 The notebook uses the same reusable Python functions as the CLI. Its optional
