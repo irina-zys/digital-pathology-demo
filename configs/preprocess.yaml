@@ -6,6 +6,8 @@ defaults:
   - export: clam_hipt
   - optional local: default
 
+run_purpose: demo  # validation keeps checks out of the default slide-browser list.
+
 thumbnail:
   max_size: 1024
   max_read_pixels: 16000000
