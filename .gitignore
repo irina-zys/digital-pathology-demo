@@ -21,3 +21,4 @@ logs/
 *.tif
 *.tiff
 configs/local/
+.ruff_cache/

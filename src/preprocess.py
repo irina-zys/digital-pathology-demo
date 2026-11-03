@@ -18,8 +18,8 @@ from omegaconf import DictConfig, OmegaConf
 
 # Compatibility imports preserve the existing public function paths.
 from src.inspection import read_thumbnail
-from src.masking import tissue_mask
-from src.quality import clean_mask
+from src.masking import tissue_mask as tissue_mask
+from src.quality import clean_mask as clean_mask
 from src.image_utils import save_png, tissue_hole_preview
 from src.report import write_report
 from src.pipeline import preprocess_masks
