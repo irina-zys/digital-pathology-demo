@@ -96,6 +96,7 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
 | Compare nuclei predictions and postprocessing on two annotated patches | [Annotation and segmentation demo](notebooks/annotation_segmentation_demo.ipynb) · [Setup](docs/pretrained-models.md) |
 | Classify bounded WSI bags with patient-disjoint splits | [WSI classification demo](notebooks/wsi_classification_demo.ipynb) |
+| Compare self-supervised pretraining, fine-tuning and training from scratch | [Training schedule demo](notebooks/training_schedule_demo.ipynb) |
 | Decompose and assemble encoders, decoders and heads | [Model components and Lightning](docs/model-components.md) |
 | Run bounded Lightning classification, MIL and segmentation | [Training](docs/training.md) |
 | Plan evaluation splits, metrics and reference annotations | [Computational pathology considerations](docs/computational-pathology-considerations.md) |

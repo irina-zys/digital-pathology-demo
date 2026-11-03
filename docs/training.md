@@ -186,7 +186,7 @@ coordinate** in the chosen export, sharing the fixed patient split and label
 order across encoders. Frozen UNI plus a trained classifier is transfer learning,
 not zero-shot diagnosis classification.
 
-The separate [brief learning notebook](../notebooks/representation_learning_demo.ipynb)
+The separate [training schedule demo](../notebooks/training_schedule_demo.ipynb)
 shows a SimCLR-style pretraining objective, actual encoder fine-tuning, and
 random initialization. Its two-patch slide mini-bags and short epoch budgets are
 explicit teaching bounds, distinct from the full-coordinate classification run.
@@ -342,6 +342,15 @@ encoder, separately for mean and attention pooling. Patch indices, coordinates
 and RGB bytes are checked across all six fits before plotting. Gradient panels
 retain their independent 99th-percentile scales; brightness is not an absolute
 sensitivity comparison.
+
+The third patch row is retained as a **QC negative example**: the red-pen loop
+on glass at level-0 `(92076, 23066)` in TCGA-85-7698, checked in its larger WSI
+context. It passed the cached CLAM-saturation eligibility mask. All three
+pretrained encoders produce features and visual responses for it; this includes
+pathology-pretrained UNI. A three-model table reports its actual pooling weight,
+within-slide rank and ratio to equal weighting. This illustrates why pretrained
+models still require tissue/artefact QC, without claiming a causal accuracy gain
+from filtering or presenting a paired QC-on/QC-off experiment.
 
 ### Self-supervised references
 
