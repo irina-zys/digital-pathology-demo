@@ -55,7 +55,8 @@ prepare the pinned comparison assets:
 
 The comparison loads original UNI through TIMM at revision
 `b55a5ec6cade1a39edfe6534189a9b8ca7a022f0`, verifies its checkpoint digest and
-trains only the attention pooling and slide classifier. An authorization failure
+compares a mean-pooled linear classifier with a learned attention-MIL classifier
+on the same frozen features. An authorization failure
 does not trigger a fallback model. Hugging Face manages its local download-resume
 cache; interrupted downloads can retain partial data. Keep tokens and weights
 out of Git. Authentication stays in the standard user cache, independently of
@@ -291,7 +292,10 @@ instance/detection metrics. The training Dice class is imported explicitly from
 ## Frozen-encoder WSI comparison
 
 The classification notebook now compares original UNI through TIMM, ImageNet
-DINO ViT-S/16 and ImageNet ResNet-50 on complete eligible patch bags. Use
+DINO ViT-S/16 and ImageNet ResNet-50 on complete eligible patch bags, with both
+mean pooling and attention MIL for each encoder. The six fits share the patient
+split and training budget; the notebook reports and interprets the two classifier
+families separately. Use
 `scripts/prepare_classification_models.py` for their verified canonical assets;
 UNI's TIMM cache is under `data/models/huggingface/hub`. Authentication uses the
 standard local Hugging Face login, independently of the weight-cache path.

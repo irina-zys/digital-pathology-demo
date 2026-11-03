@@ -181,7 +181,7 @@ neither patch metrics nor bag metrics automatically become patient-level metrics
 
 The [WSI classification notebook](../notebooks/wsi_classification_demo.ipynb)
 compares frozen original UNI, ImageNet DINO ViT-S/16 and ImageNet ResNet-50 with
-trained attention pooling and slide classifiers. It uses **every eligible
+trained mean-pooling and attention-MIL slide classifiers. It uses **every eligible
 coordinate** in the chosen export, sharing the fixed patient split and label
 order across encoders. Frozen UNI plus a trained classifier is transfer learning,
 not zero-shot diagnosis classification.
@@ -202,7 +202,7 @@ No second optimizer loop is implemented in notebooks.
 
 | Experiment | Model/data components | Learning behavior |
 | --- | --- | --- |
-| `mil_features` | `ClassificationModule` / `FeatureBagDataModule` | Frozen cached features; all eligible patches; attention and slide head learn |
+| `mil_features` | `ClassificationModule` / `FeatureBagDataModule` | Frozen cached features; all eligible patches; mean or learned attention pooling and a linear slide head |
 | `simclr_wsi` | `ContrastiveModule` / `WSIContrastiveDataModule` | Random ResNet50, paired augmented views, NT-Xent; no diagnosis loss |
 | `finetune_dino` | `ClassificationModule` / `WSIBagDataModule` | Verified local ImageNet DINO; encoder and mean-pooled slide head learn |
 | `finetune_resnet50` | Same interfaces | Verified ImageNet ResNet50; encoder and slide head learn |
@@ -232,7 +232,7 @@ uv run --locked --extra train python -m src.runners.train experiment=finetune_di
 Feature MIL takes the generated **feature manifest**, with cache checksums,
 eligible counts, encoder checksum and dimensionality, rather than raw WSI rows.
 `configs/wsi_comparison.yaml` configures the matched encoder comparison; each
-model fit composes `experiment=mil_features`. Data, model and label contracts are
+model fit composes `experiment=mil_features` with `model/pooling@model.net.pooling=mean` or `attention`. Data, model and label contracts are
 saved and checked during checkpoint reload. Interrupted budgets are not reported
 as completed comparisons.
 
@@ -263,18 +263,85 @@ The notebook's coverage table reports actual counts rather than a patch cap.
 ### Curves and interpretation
 
 Twenty measured epochs are the default for frozen-feature MIL. The same seed,
-patient split, optimizer settings and epoch budget are used across encoders;
+patient split, optimizer settings and epoch budget are used across encoders and
+both pooling methods. The linear head starts identically within each encoder;
 feature dimensions and head parameter counts differ and are reported. Validation
 loss selects a checkpoint; the two held-out patients do not select hyperparameters.
 Training loss is measured during updates and validation after each epoch.
 
-Whole-slide maps show **MIL pooling attention** on all eligible coordinates.
-Colours are within-slide percentiles, not tumour probabilities or transformer
-self-attention. H/M/L locate the highest/median/lowest attention patches.
-Selected-patch maps differentiate the selected slide-class logit through one
-patch with all other embeddings retained. Raw gradients/weights and display
-scales are saved. Per-patch display normalization can amplify weak signals;
+Mean pooling learns a linear classifier with equal `1/N` patch weights. Its
+whole-slide map shows signed per-patch contributions to a fixed class logit;
+their sum plus the classifier bias recovers that logit. Attention MIL also learns
+patch weights; its map shows within-slide weight percentiles, not class support
+or tumour probability. Results and interpretations are separated by classifier,
+then paired within each encoder. With only two held-out patients, neither a
+loss difference nor a more focused map establishes model superiority.
+
+The common explanation target is LUSC (`interpretation_class_index: 1`). Maps
+cover all eligible coordinates. The first, middle and last coordinate positions
+are identical examples across encoders and poolings, not attention-ranked tissue.
+Selected-patch maps differentiate the class logit through one patch while all
+other embeddings remain fixed. Raw gradients, contribution/weight values and
+display scales are saved. Each saliency panel has its own 99th-percentile scale;
 these maps demonstrate sensitivity, not causal or histological validation.
+
+
+### Patch attention versus feature dimensions and gradients
+
+MIL scores `[N patches, D features]` as `[N, 1]` and normalizes across patches.
+The hidden `attention_dim` does not make this feature-channel attention. Its
+one weight per 256-pixel patch supports a whole-slide overlay, not localization
+inside that patch. ResNet-50 supplies 2,048-dimensional embeddings after its
+ImageNet classifier is removed; the custom mean/attention readout and linear
+LUAD/LUSC head are trained on those frozen features.
+
+The notebook separately extracts actual last-block CLS-to-spatial-token attention
+from UNI and DINO. It averages heads and highlights tokens at or above percentile
+0.8 (`patch_attention_percentile`), inspired by [HIPT's selective overlays](https://github.com/mahmoodlab/HIPT/blob/780fafaed2e5b112bc1ed6e78852af1fe6714342/HIPT_4K/attention_visualization_utils.py#L249-L349).
+The 224-pixel inputs produce 14×14 spatial tokens; nearest-neighbour display
+preserves that resolution. Amber fill and cyan outlines distinguish attention
+from grayscale LUSC input-gradient sensitivity. Encoder attention is class-agnostic
+and shared by both pooling heads. ResNet is explicitly marked unsupported for
+this transformer view. No new HIPT model, 4K tiles or RGB inpainting is introduced.
+
+For pathology interpretation, [Lu et al., CLAM (2021)](https://www.nature.com/articles/s41551-020-00682-w)
+compared attention heatmaps with pathologist tumour annotations. Such maps can
+guide candidate-region review and checks for plausible morphology or artefacts.
+They still require tissue-level validation: attention weight is not tumour
+probability, a segmentation or causal evidence. This demo's simple MIL classifier
+does not implement CLAM's clustering constraint.
+
+
+All three encoders share one whole-slide comparison figure: model rows with
+original RGB, signed mean contributions and attention-MIL percentile columns.
+Mean-contribution limits are independent per encoder; attention colours compare
+within-slide ranks, not absolute pooling weights. The notebook uses held-out
+TCGA-85-7698, selected for its one main tissue section rather than model scores.
+Its pen marks and small peripheral fragments stay visible for artefact review.
+A ResNet backbone does not need transformer layers for a custom MIL head to
+weight patch embeddings. All eligible patches participate; unscored gaps remain
+unchanged. Percentiles use the full slide, with no numbered patch markers or
+patch-grid zooms in the demo.
+
+The combined within-patch localization figure places UNI and DINO CLS attention
+beside both ResNet pooling heads. ResNet uses [Grad-CAM](https://openaccess.thecvf.com/content_iccv_2017/html/Selvaraju_Grad-CAM_Visual_Explanations_ICCV_2017_paper.html)
+through the trained mean/attention head's LUSC logit and `layer4` features.
+The same magma palette as MIL attention shows relative positive values on the
+native 7×7 grid: dark purple is lower and orange/yellow higher. Each Grad-CAM is
+divided by its own positive maximum; 1 means the panel maximum, not a probability
+or an attention percentile. Zero-valued regions keep their RGB, and ReLU omits
+negative values. The colourbar states this independent scaling; colours cannot
+compare absolute strength across panels. Grayscale panels retain input-gradient
+sensitivity. Other patch embeddings stay fixed. This is class-conditioned
+localization, not transformer attention or a segmentation. Raw signed CAMs and
+display scales are saved; an all-zero positive map stays zero.
+
+Every classification-demo comparison figure includes UNI, DINO and ResNet-50.
+Matched input-gradient figures use a shared RGB reference and one column per
+encoder, separately for mean and attention pooling. Patch indices, coordinates
+and RGB bytes are checked across all six fits before plotting. Gradient panels
+retain their independent 99th-percentile scales; brightness is not an absolute
+sensitivity comparison.
 
 ### Self-supervised references
 
@@ -335,7 +402,7 @@ The original pre-refactor baseline records under `outputs/lightning_validation_2
 are historical; their checkpoints do not satisfy version 2. Current refactor and
 follow-up audit records are described in [the audit record](repository-audit.md).
 They establish mechanics on the exercised inputs, not full-cohort convergence,
-biological accuracy, a model ranking or exact stochastic replay. Full encoder-comparison/GPU
+biological accuracy, a model ranking or exact stochastic replay. Full six-fit/GPU
 training and network acquisition branches were not part of this bounded audit.
 
 ## Modular components and the API break
