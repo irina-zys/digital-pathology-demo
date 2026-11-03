@@ -17,10 +17,21 @@ from omegaconf import OmegaConf
 LOG = logging.getLogger(__name__)
 
 
+class _FitProgress(L.Callback):
+    """Count this invocation's updates after Lightning restores checkpoint state."""
+    initial_step = None
+
+    def on_train_start(self, trainer, pl_module):
+        self.initial_step = trainer.global_step
+
+
 def run(cfg, output, *, evaluate=False):
     """Run a bounded single-device fit or checkpoint evaluation in a fresh directory."""
     output = Path(output)
-    if output.exists() and any(p.name not in {".hydra", "train.log", "eval.log"} for p in output.iterdir()):
+    if output.is_symlink():
+        raise ValueError("Training output must not be a symlink")
+    job_name = HydraConfig.get().job.name if HydraConfig.initialized() else ("eval" if evaluate else "train")
+    if output.exists() and any(p.name not in {".hydra", f"{job_name}.log"} for p in output.iterdir()):
         raise FileExistsError(f"Choose a fresh hydra.run.dir: {output}")
     if cfg.trainer.devices != 1 or cfg.trainer.get("num_nodes", 1) != 1:
         raise ValueError("This baseline runner supports one device; distributed execution is not implemented")
@@ -59,7 +70,12 @@ def run(cfg, output, *, evaluate=False):
         writer = csv.DictWriter(stream, fieldnames=list(data.rows[0]))
         writer.writeheader()
         writer.writerows(selected)
+    if hasattr(data, "selections"):
+        (output / "sampled_coordinates.json").write_text(json.dumps(data.selections, indent=2, allow_nan=False) + "\n")
     callbacks = [instantiate(value) for value in cfg.callbacks.values() if value is not None]
+    progress = _FitProgress()
+    if not evaluate:
+        callbacks.append(progress)
     logger = instantiate(cfg.logger) if cfg.logger else False
     trainer = instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
     if logger:
@@ -72,8 +88,9 @@ def run(cfg, output, *, evaluate=False):
         best_path = checkpoint
     else:
         trainer.fit(model=model, datamodule=data, ckpt_path=checkpoint)
-        if trainer.global_step == 0:
-            raise RuntimeError("Training performed no optimizer steps")
+        updates = 0 if progress.initial_step is None else trainer.global_step - progress.initial_step
+        if updates <= 0:
+            raise RuntimeError("Training performed no new optimizer steps; increase the epoch/step budget when resuming")
         if trainer.interrupted:
             raise RuntimeError("Training interrupted; no completion manifest written")
         metrics = {key: float(value.detach().cpu()) for key, value in trainer.callback_metrics.items()}
@@ -85,6 +102,7 @@ def run(cfg, output, *, evaluate=False):
     payload = dict(status="complete", stage="test" if evaluate else "fit", task=model.task,
                    metrics=metrics, checkpoint=best_path, global_step=trainer.global_step,
                    current_epoch=trainer.current_epoch,
+                   optimizer_steps_this_run=0 if evaluate else updates,
                    manifest_sha256=hashlib.sha256(source_manifest).hexdigest(),
                    samples_by_split={k: len(v) for k, v in data.datasets.items()},
                    model_contract=model.contract, data_contract=data.contract,

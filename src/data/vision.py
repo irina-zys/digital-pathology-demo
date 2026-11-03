@@ -90,6 +90,8 @@ class VisionDataModule(L.LightningDataModule):
             raise ValueError("Invalid data resource bounds")
         if image_size is not None and (type(image_size) is not int or image_size < 32):
             raise ValueError("image_size must be null or an integer >= 32")
+        if image_size is not None and image_size ** 2 > max_pixels:
+            raise ValueError("Resized model input exceeds max_pixels")
         if max_samples_per_split is not None and max_samples_per_split < 1:
             raise ValueError("max_samples_per_split must be positive or null")
         if len(mean) != 3 or len(std) != 3 or not np.isfinite([*mean, *std]).all() or min(std) <= 0:
@@ -122,6 +124,9 @@ class VisionDataModule(L.LightningDataModule):
             for row in rows:
                 if any(not row.get(key, "").strip() for key in required):
                     raise ValueError("Manifest contains an empty required field")
+                for key in ("split", "group_id", "bag_id"):
+                    if row.get(key) is not None:
+                        row[key] = row[key].strip()
                 split, group = row["split"], row["group_id"]
                 if split not in samples:
                     raise ValueError(f"Unknown split: {split}")

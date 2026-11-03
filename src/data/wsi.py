@@ -125,8 +125,6 @@ class WSIBagDataModule(VisionDataModule):
             raise ValueError("max_slides must be an integer in 1–100")
         if self.hparams.max_patches_per_bag > 64 or self.hparams.num_workers != 0:
             raise ValueError("This bounded WSI reader permits up to 64 patches/bag and num_workers=0")
-        if self.hparams.image_size is not None and self.hparams.image_size ** 2 > self.hparams.max_pixels:
-            raise ValueError("Resized model input exceeds max_pixels")
         self.target_mpp, self.max_slides = target_mpp, max_slides
         self.selections = {}
         self.contract.pop("mask_policy")
@@ -153,6 +151,8 @@ class WSIBagDataModule(VisionDataModule):
             for row in rows:
                 if any(not row.get(key, "").strip() for key in required):
                     raise ValueError("WSI manifest contains an empty required field")
+                for key in ("split", "group_id", "bag_id"):
+                    row[key] = row[key].strip()
                 split, group, bag = row["split"], row["group_id"], row["bag_id"]
                 if split not in samples or groups.setdefault(group, split) != split:
                     raise ValueError("Unknown split or patient group crossing splits")
@@ -169,14 +169,15 @@ class WSIBagDataModule(VisionDataModule):
                 bags.add(bag)
                 samples[split].append([row])
             # Validate all identities before any per-split cap or pixel reads.
-            self.rows = rows
+            selections, datasets = {}, {}
             for split, items in samples.items():
                 if self.hparams.max_samples_per_split is not None:
                     items = items[:self.hparams.max_samples_per_split]
                 for sample in items:
                     row = sample[0]
-                    self.selections[row["bag_id"]] = select_coordinates(row, self.hparams.max_patches_per_bag,
+                    selections[row["bag_id"]] = select_coordinates(row, self.hparams.max_patches_per_bag,
                                                                        self.target_mpp, self.hparams.max_pixels)
-                self.datasets[split] = WSIBagDataset(items, self.selections, self.hparams.image_size,
+                datasets[split] = WSIBagDataset(items, selections, self.hparams.image_size,
                     self.hparams.mean, self.hparams.std, self.hparams.augment and split == "train", self.hparams.max_pixels)
+            self.rows, self.selections, self.datasets = rows, selections, datasets
         super().setup(stage)
