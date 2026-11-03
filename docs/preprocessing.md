@@ -32,12 +32,33 @@ uv run --locked python -m src.preprocess masking=tia_morphological
 uv run --locked python -m src.preprocess masking=codait_od
 ```
 
+Slide-count, thumbnail-edge and pixel-budget bounds require integers; fractional
+or boolean values are rejected rather than silently rounded.
 Use either `data.manifest` or `data.paths`, not both. Relative input paths resolve
 from the launch directory even with `hydra.job.chdir=true`; the default is false.
 Each run requires a fresh output directory. `resolved_config.yaml` records task
 settings; `.hydra/<timestamp>/` preserves each invocation's Hydra configuration
 and overrides, including refused attempts to reuse an existing output directory.
-Only manifests with `status: complete` describe completed runs.
+Only manifests with `status: complete` describe completed runs. A run reserves
+its directory with `run_started.json`; existing artifacts or symlink output
+folders are refused. Hydra's own log and configuration directory are permitted.
+
+New manifests identify `run_kind: preprocessing`, `schema_version: 1` and
+`run_purpose: demo` (or `validation`). Use `run_purpose=validation` for execution
+checks; the viewer hides those runs until “Show validation runs” is enabled.
+It also recognizes older validation/verification/review directory names.
+Set `DIGITAL_PATHOLOGY_OUTPUTS=/absolute/run/root` before starting Streamlit to
+browse a different output tree, including Hydra runs outside `outputs/`.
+
+Each manifest retains the input CSV's SHA-256, Git revision/dirty state and exact
+preprocessing source hashes. Slides retain declared source checksum fields,
+source size and modification time. `source_checksum_verified: false` is explicit:
+this bounded run did not recompute a whole-WSI checksum. Unchanged size/mtime and
+a thumbnail hash are not substitutes for a verified source-file checksum.
+`patient_id` comes from a nonempty declared `case_submitter_id` or `case_id`
+after trimming surrounding whitespace;
+missing identities remain null. The viewer counts known dataset-scoped IDs and
+never counts filenames or unknown values as patients.
 
 A Hydra sweep creates separate numbered job directories. Bounds apply per job:
 
@@ -174,7 +195,7 @@ outputs/<run>/
   overviews/<dataset>/                # All small PNGs in one flat directory
   datasets/<dataset>/
     WSIs/<slide_id>.svs               # Relative symlink to the original
-    dataset.csv                      # Participant, slide, label, path; stain if present
+    dataset.csv                      # Fixed case/slide/label/path/stain/sample columns
     extracted_mpp0p5_patch256_fp/
       masks/<slide_id>.jpg            # Green tissue and blue hole contours
       tissue_masks/<slide_id>.png     # Lossless retained mask
@@ -198,6 +219,12 @@ CLAM's coordinate-bag reader reads the native footprint from `patch_size`.
 Downstream transforms must resize to the recorded output size: use
 `--target_patch_size 256` for the default bag in CLAM's feature-extraction CLI.
 This project does not execute or validate downstream CLAM/HIPT models.
+
+`dataset.csv` always has `case_id,slide_id,label,wsi_path,stain,sample_id` columns;
+optional values are blank. Its case ID uses the declared submitter ID, then case
+ID, and stays blank when neither exists. Unknown patient identity is not replaced
+with a slide filename. Mixed rows with and without stain metadata keep the same
+CSV schema.
 
 The lossless `tissue_holes.png` changes only contour pixels: green tissue
 exteriors and blue holes, without fills. `hole_mask.png` identifies background

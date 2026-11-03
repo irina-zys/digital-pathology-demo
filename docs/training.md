@@ -49,8 +49,11 @@ All tasks require `image_path,split,group_id`. `split` is exactly `train`, `val`
 or `test`. Training requires nonempty train and val sets; evaluation requires a
 test set. No random split is inferred. Use stable participant IDs as `group_id`
 when available, keeping their slides, stains, patches and bags together.
+Leading/trailing whitespace is removed from split, participant and bag identifiers.
 Duplicate image paths and groups spanning splits are rejected before sample caps.
 The loader cannot establish patient independence if the supplied IDs are wrong.
+When evaluating a checkpoint with a different manifest, audit overlap with its
+original training patients separately; the manifest checks cover the current run.
 
 Classification and MIL additionally require `label`, an integer indexing the
 ordered `class_names` list (for example, `'class_names=[control,disease]'`). Label
@@ -82,7 +85,8 @@ This predicts nuclear foreground, not separated instances or whole cells.
 Training uses paired horizontal/vertical flips; validation/test never augment.
 Set `data.augment=false` to disable flips. Segmentation keeps native resolution by
 default; batches larger than one require equal image sizes. Resizing a mask uses
-nearest-neighbor interpolation and is an explicit experimental change.
+nearest-neighbor interpolation and is an explicit experimental change. Both source
+images and resized model inputs must remain within `data.max_pixels`.
 
 ## Train, evaluate and resume
 
@@ -115,8 +119,10 @@ with `ckpt_path=/absolute/path/to/checkpoints/last.ckpt` and a larger
 `trainer.max_epochs`. Always select a fresh output directory for the new run.
 Lightning restores optimizer/epoch state but resets checkpoint ranking when the
 checkpoint directory changes; the resumed run selects its best from its new
-validation epochs. Retain and compare the previous best separately. Exact random
-sampling replay across a resume is not guaranteed.
+validation epochs. Retain and compare the previous best separately. A resumed
+run must perform at least one new optimizer update; reusing an exhausted epoch/step
+budget fails rather than reporting another completed training run.
+Exact random sampling replay across a resume is not guaranteed.
 
 MIL uses one variable-size bag per batch. `data.max_patches_per_bag` bounds the
 encoder workload: training randomly samples without replacement when augment is
@@ -138,8 +144,11 @@ execution is deliberately not supported by this small runner. For sweeps, Hydra
 Each run saves `resolved_config.yaml`, the original `input_manifest.csv`, resolved
 `selected_samples.csv`, CSV epoch metrics, best/last checkpoints and
 `metrics.json`. The last includes completion status, versions, input-manifest
-SHA-256, sample/bag counts, metrics and the evaluated/best checkpoint path.
-Selected MIL rows enumerate the available patches before per-bag sampling.
+SHA-256, sample/bag counts, metrics, optimizer updates performed in this
+invocation, and the evaluated/best checkpoint path.
+Selected patch-MIL rows enumerate the available patches before per-bag sampling.
+WSI runs also save `sampled_coordinates.json` with the exact selected coordinates,
+coordinate-file hashes and calibration recorded by the reader.
 `run_started.json` reserves the directory and rejects reuse. A failed run has no
 complete `metrics.json`. Hydra settings are recorded per invocation.
 

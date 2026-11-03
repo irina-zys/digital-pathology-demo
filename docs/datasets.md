@@ -3,8 +3,10 @@
 [Quick start](../README.md) · [Preprocessing](preprocessing.md) ·
 [Annotation conversion](annotation-conversion.md)
 
-Run commands from the repository root after `uv sync --locked`. Downloaders use
-the TCGA/KPMP public manifests and keep originals under `data/`. QuPath projects
+Run the examples below from the repository root after `uv sync --locked`.
+Downloaders resolve the project root from their script location, so invoking an
+absolute script path elsewhere still reuses the same manifests and `data/` tree.
+TCGA/KPMP originals remain under that canonical directory. QuPath projects
 reference those files; preprocessing layouts use symlinks. Neither workflow makes
 another WSI copy. Large data, download receipts and generated outputs stay out of
 Git. Keep manifests for reproducible selection and choose new run directories
@@ -19,8 +21,10 @@ uv run --locked python -m src.preprocess data=pen_examples hydra.run.dir=outputs
 ```
 
 The first command downloads the small public Aperio reader example and real
-CODAIT pen-mark images. Raster examples support mask review but do not carry
-known WSI physical calibration, so calibrated coordinate export skips them.
+CODAIT pen-mark images. Existing and downloaded examples are read with a 10 MB
+bound and must match the pinned SHA-256; new files are created exclusively.
+Raster examples support mask review but do not carry known WSI physical
+calibration, so calibrated coordinate export skips them.
 
 ## TCGA lung
 
@@ -45,8 +49,8 @@ The default H&E workflow is the combined CODAIT/TIA/CLAM mask pipeline.
 
 The downloader resumes partial files and verifies GDC file size and MD5 before
 promoting each download to `.svs`. Defaults permit four concurrent transfers,
-a 10 GB total download budget, and require disk headroom. It reuses the manifest
-when present; if absent, it queries GDC to select a new roster. Preserve the
+a 10 GB total download budget, and require disk headroom. Budget overrides must
+be finite and positive. It reuses the manifest when present; if absent, it queries GDC to select a new roster. Preserve the
 committed manifest for exact replay. Originals use UUID filenames under
 `data/tcga/<project>/`; the manifest retains original filenames, case IDs and labels.
 
