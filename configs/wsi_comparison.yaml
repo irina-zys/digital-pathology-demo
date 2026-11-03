@@ -1,5 +1,10 @@
 # All exported eligible coordinates participate; no per-slide patch subsampling.
 models: [uni, dino, resnet50]
+poolings: [mean, attention]
+# Keep the saliency/contribution target identical across all six fits.
+interpretation_class_index: 1  # LUSC in the class_names order below.
+# Highlight high-ranking encoder tokens; this is a within-patch percentile, not attention mass.
+patch_attention_percentile: 0.8
 seed: 42
 class_names: [LUAD, LUSC]
 epochs: 20
