@@ -1,5 +1,9 @@
 # Annotation conversion
 
+For a bounded walkthrough followed by pretrained nuclei inference, open the
+[annotation and segmentation demo](../notebooks/annotation_segmentation_demo.ipynb)
+and follow its [model setup](pretrained-models.md).
+
 `convert_annotations.py` converts either COCO polygon annotations or 2D integer instance-label images into:
 
 - pixel-coordinate GeoJSON FeatureCollections, one feature per instance, retaining holes and disconnected parts;

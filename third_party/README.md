@@ -56,3 +56,18 @@ offers unmasked or contour-based constant backgrounds for Reinhard, Macenko, Rui
 and Vahadane, restoring the supplied background colour after transformation only for the masked path.
 It does not alter TIA's statistical estimators. CODAIT normalisation code was not
 copied. Keep the GPLv3 licence and source notices when redistributing this subset.
+
+## HoVer-NeXt pretrained patch adapter
+
+`HoVerNeXt/` retains the GPLv3 licence and selected source from
+[digitalpathologybern/hover_next_inference](https://github.com/digitalpathologybern/hover_next_inference/tree/bde3c9d96172d16513e292d0a2dfcd7ff80202ff).
+`SOURCE.json` records upstream/local hashes and the narrow adaptation: selected
+array postprocessing functions use NumPy storage in place of a Zarr array.
+Architecture and class constants are unchanged. The adapter in `src/hovernext.py`
+loads the verified PanNuke Tiny fold-1 checkpoint and official thresholds, then
+performs one direct 256-pixel inference without WSI tiling or test-time augmentation.
+
+Weights are downloaded separately into ignored `data/models/`, under the
+[release's CC-BY-NC-SA-4.0 licence](https://zenodo.org/records/10635618).
+See [pretrained model setup](../docs/pretrained-models.md) for the separate UNI
+and Cellpose source/access notices. No model weights are redistributed in Git.

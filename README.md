@@ -77,13 +77,16 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | Understand Hydra and the code layout | [Hydra and project structure](docs/hydra-and-project-structure.md) |
 | Configure masking, tiling and outputs | [Preprocessing](docs/preprocessing.md) |
 | Obtain datasets and create QuPath projects | [Datasets](docs/datasets.md) |
-| Walk through metadata, masks, QC and optional stain comparisons | [Introductory demo](notebooks/introductory_demo.ipynb) |
+| Walk through metadata, masks, QC and optional stain comparisons | [Preprocessing demo](notebooks/preprocessing_demo.ipynb) |
 | Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
+| Compare pretrained nuclei predictions on two annotated patches | [Annotation and segmentation demo](notebooks/annotation_segmentation_demo.ipynb) · [Setup](docs/pretrained-models.md) |
+| Decompose and assemble encoders, decoders and heads | [Model components and Lightning](docs/model-components.md) |
+| Run bounded Lightning classification, MIL and segmentation | [Training](docs/training.md) |
 | Plan evaluation splits, metrics and reference annotations | [Computational pathology considerations](docs/computational-pathology-considerations.md) |
 | Run Ruff and enable Git checks | [Linting and pre-commit hooks](docs/linting.md) |
 | Review upstream sources and licences | [Third-party attribution](third_party/README.md) |
 
-The notebook uses the same reusable Python functions as the CLI. Its optional
+The preprocessing notebook uses the same reusable Python functions as the CLI. Its optional
 stain comparison pairs original-background processing with one shared estimated
 background colour. Normalization is **off in the default WSI pipeline**; its
 assumptions and API are documented in the [guide](docs/preprocessing.md#optional-stain-normalization).
@@ -99,5 +102,5 @@ Commit code, configuration, small public manifests, lockfiles and documentation.
 Slides, generated outputs, `.venv`, personal guidance and local configuration
 stay out of Git. Runtime artifacts can contain local paths; review them before
 sharing separately. Preserve the upstream licences, including the vendored
-CLAM GPLv3 notices. No additional package is needed for the optional notebook
-normalization or annotation utilities.
+CLAM and HoVer-NeXt GPLv3 notices. Pretrained inference uses the optional setup
+above; annotation conversion and stain normalization use the base environment.

@@ -52,9 +52,10 @@ configs + CLI overrides
 Hydra does not choose a segmentation algorithm by inspecting a module name.
 `run` explicitly passes the selected settings to our functions. The numerical
 masking helpers receive ordinary mappings, converted with
-`OmegaConf.to_container(..., resolve=True)`. This project does not use Hydra
-`_target_`/`instantiate` to construct its processing stages, and running Hydra
-does not start Lightning training.
+`OmegaConf.to_container(..., resolve=True)`. Preprocessing does not use Hydra
+`_target_`/`instantiate` to construct its stages. The separate
+[training entrypoint](training.md) does use `instantiate` for its model, data,
+callbacks and trainer; running the preprocessing entrypoint does not train a model.
 
 ## How the YAML files combine
 

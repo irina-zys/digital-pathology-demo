@@ -4,11 +4,11 @@
 [Annotation conversion](annotation-conversion.md)
 
 Run CLI commands from the repository root. The
-[Introductory demo](../notebooks/introductory_demo.ipynb) provides a guided version:
+[Preprocessing demo](../notebooks/preprocessing_demo.ipynb) provides a guided version:
 select the project's `.venv/bin/python`, restart the kernel and run all cells.
 It discovers the project from ancestor directories, with an explicit project-path
 override available when launched elsewhere. New notebook outputs go under the
-repository's ignored `outputs/introductory_demo/` directory. The published notebook has
+repository's ignored `outputs/preprocessing_demo/` directory. The published notebook has
 no embedded execution output; running it creates the figures and provenance.
 
 ## Configuration and run lifecycle
