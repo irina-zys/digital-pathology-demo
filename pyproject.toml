@@ -10,6 +10,7 @@ dependencies = [
     "pillow>=10,<13",
     "opencv-python>=4.6,<5",
     "h5py>=3.12,<4",
+    "streamlit>=1.55,<2",
 ]
 
 [project.optional-dependencies]
