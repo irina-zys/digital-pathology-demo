@@ -129,7 +129,7 @@ def main():
     def save_report():
         (output / "validation.json").write_text(json.dumps(report, indent=2, allow_nan=False) + "\n")
 
-    def run(name, options, *, evaluate=False, resume=False, rejection=None, directory=None):
+    def run(name, options, *, evaluate=False, resume=False, rejection=None, directory=None, final_overrides=()):
         run_output = directory or output / name
         command = [sys.executable, "-B", "-m", "src.runners.train",
                    *(["--config-name", "eval"] if evaluate else []), *options,
@@ -138,7 +138,7 @@ def main():
                    "trainer.limit_train_batches=2", "trainer.limit_val_batches=1", "trainer.limit_test_batches=1",
                    "trainer.num_sanity_val_steps=0", "trainer.enable_progress_bar=false",
                    "trainer.enable_model_summary=false", "callbacks.checkpoint.save_last=false",
-                   override("hydra.run.dir", str(run_output))]
+                   override("hydra.run.dir", str(run_output)), *final_overrides]
         log = output / f"{name}.log"
         record = {"name": name, "command": command, "log": str(log)}
         records.append(record)
@@ -198,6 +198,10 @@ def main():
     run("evaluation", [*patch, checkpoint], evaluate=True)
     run("resume", [*patch, checkpoint], resume=True)
     report["composed_experiments"] = compose_experiments(args, output, feature_dim, encoder_sha, ssl_checkpoint, ssl_sha)
+    run("time_limit", patch, final_overrides=["trainer.max_epochs=10000", "trainer.max_time=00:00:00:01"],
+        rejection="Training time limit reached; no completion manifest written")
+    if (output / "time_limit/metrics.json").exists():
+        raise RuntimeError("Time-limited training must not publish a completed metrics record")
 
     with args.patch_manifest.open(newline="") as stream:
         rows = list(csv.DictReader(stream))
