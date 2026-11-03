@@ -1,9 +1,10 @@
-"""Fetch/replay a bounded public GDC roster; run from the repository root."""
+"""Fetch/replay a bounded public GDC roster in the canonical project directory."""
 
 import argparse
 import csv
 import hashlib
 import json
+import math
 import re
 import shutil
 import time
@@ -15,8 +16,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
+ROOT = Path(__file__).resolve().parents[1]
 API = "https://api.gdc.cancer.gov"
-MANIFEST = Path("manifests/tcga_demo.csv")
+MANIFEST = ROOT / "manifests/tcga_demo.csv"
 PROJECTS = ("TCGA-LUAD", "TCGA-LUSC")
 
 
@@ -74,8 +76,8 @@ def select_roster():
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    Path("data/manifests").mkdir(parents=True, exist_ok=True)
-    Path("data/manifests/selection.json").write_text(json.dumps({
+    (ROOT / "data/manifests").mkdir(parents=True, exist_ok=True)
+    (ROOT / "data/manifests/selection.json").write_text(json.dumps({
         "queried_at_utc": datetime.now(timezone.utc).isoformat(), "api": API,
         "filters": filters, "total_hits": len(hits), "eligible_candidates": len(candidates),
         "selection": "one case per site per class; nearest to 60/130/250/400/650 MB; 30-800 MB eligibility",
@@ -90,7 +92,7 @@ def checksum(path):
 
 
 def download(row):
-    path = Path(row["path"])
+    path = ROOT / row["path"]
     expected_size = int(row["file_size"])
     if path.exists():
         if path.stat().st_size == expected_size and checksum(path) == row["md5sum"]:
@@ -151,6 +153,8 @@ def main():
     parser.add_argument("--max-gb", type=float, default=10)
     parser.add_argument("--workers", type=int, choices=range(1, 5), default=4)
     args = parser.parse_args()
+    if not math.isfinite(args.max_gb) or args.max_gb <= 0:
+        parser.error("--max-gb must be a positive finite value")
     if MANIFEST.exists():
         with MANIFEST.open(newline="") as stream:
             rows = list(csv.DictReader(stream))
@@ -158,12 +162,16 @@ def main():
         rows = select_roster()
     if Counter(row["project"] for row in rows) != Counter({p: 5 for p in PROJECTS}):
         raise ValueError("Expected five slides per project")
-    if len({row["case_id"] for row in rows}) != 10:
-        raise ValueError("Cases must be distinct")
+    if (len({row["case_id"] for row in rows}) != 10
+            or len({row["file_id"] for row in rows}) != 10
+            or len({row["path"] for row in rows}) != 10):
+        raise ValueError("Cases, files and paths must be distinct")
     for row in rows:
         file_id = str(UUID(row["file_id"]))
         if row["path"] != f"data/tcga/{row['project']}/{file_id}.svs":
             raise ValueError("Manifest path must remain inside data/tcga")
+        if not (ROOT / row["path"]).resolve().is_relative_to((ROOT / "data/tcga").resolve()):
+            raise ValueError("File must stay inside the canonical TCGA data directory")
         if not re.fullmatch(r"[0-9a-f]{32}", row["md5sum"]):
             raise ValueError("Invalid MD5")
         if int(row["file_size"]) <= 0:
@@ -174,8 +182,8 @@ def main():
         raise ValueError("Roster exceeds download budget")
     if args.select_only:
         return
-    missing = sum(int(r["file_size"]) for r in rows if not Path(r["path"]).exists())
-    if shutil.disk_usage(".").free < missing + 2_000_000_000:
+    missing = sum(int(r["file_size"]) for r in rows if not (ROOT / r["path"]).exists())
+    if shutil.disk_usage(ROOT).free < missing + 2_000_000_000:
         raise RuntimeError("Insufficient disk space including 2 GB headroom")
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         list(pool.map(download, rows))

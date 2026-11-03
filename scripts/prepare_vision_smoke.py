@@ -5,9 +5,12 @@ import csv
 from pathlib import Path
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--data-root", type=Path, default=Path("data/nuinsseg"))
+    parser.add_argument("--data-root", type=Path, default=ROOT / "data/nuinsseg")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     with (args.data_root / "index.csv").open(newline="") as stream:
@@ -22,6 +25,9 @@ def main():
             if len(matches) != 2:
                 raise ValueError(f"Need two real NuInsSeg patches for {species}/{tissue}")
             for row in matches:
+                for key in ("image_path", "instance_mask_path", "ambiguous_mask_path"):
+                    if not (args.data_root / row[key]).is_file():
+                        raise FileNotFoundError(f"Missing real NuInsSeg input: {row[key]}")
                 selected.append(dict(image_path=row["image_path"], split=split,
                     group_id=f"{species}:{tissue}", label=0 if species == "human" else 1,
                     bag_id=f"{species}:{tissue}", mask_path=row["instance_mask_path"],
