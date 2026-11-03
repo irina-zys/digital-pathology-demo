@@ -140,18 +140,23 @@ def load_demo_patches(demo):
     return patches
 
 
-def run_prediction(demo, name, model, *, invert=None, diameter=None, iou_threshold=0.5):
+def run_prediction(demo, name, model, *, invert=None, diameter=None, iou_threshold=0.5,
+                   tta_views=None, tta_seed=None):
     """Run and retain a new attempt, so re-executing notebook cells never overwrites predictions."""
     if name not in demo['patches'] or model not in {'hovernext', 'cellpose'}:
         raise ValueError('Choose a loaded patch and hovernext/cellpose')
     if model == 'hovernext' and (invert not in (None, False) or diameter is not None):
         raise ValueError('Polarity and diameter controls apply only to Cellpose')
+    if model == 'cellpose' and (tta_views is not None or tta_seed is not None):
+        raise ValueError('The spatial/HED TTA controls apply only to HoVer-NeXt')
     patch = demo['patches'][name]
     directory = _new_directory(demo['out']/'attempts'/model, name)
     started = time.monotonic()
     try:
         if model == 'hovernext':
-            result = predict_hovernext(patch['rgb'], demo['hover'], max_pixels=65_536)
+            result = predict_hovernext(patch['rgb'], demo['hover'], max_pixels=65_536,
+                tta_views=16 if tta_views is None else tta_views,
+                tta_seed=42 if tta_seed is None else tta_seed)
         else:
             invert = True if invert is None else invert  # H&E nuclei are dark in this RGB input.
             result = run_cellpose_patch(patch['rgb'], directory/'worker', checkpoint=demo['cellpose_checkpoint'],
@@ -357,7 +362,10 @@ def plot_model_comparison(patches, baseline):
         if any(a['name'] != name or a['labels'].shape != (height, width) for a in attempts):
             raise ValueError('Comparison predictions must use the displayed patch and crop')
         panels = [(None, f'{name} · RGB input'), (patch['reference'], 'Annotated ground truth'),
-                  (attempts[0]['labels'], 'HoVer-NeXt'), (attempts[1]['labels'], 'Cellpose')]
+                  (attempts[0]['labels'], f"HoVer-NeXt · {attempts[0]['metadata']['settings']['tta_views']}-view TTA"),
+                  (attempts[1]['labels'], 'Cellpose · image-size refinement'
+                   if attempts[1]['metadata']['settings']['diameter_estimation']['method'] == 'official_size_model'
+                   else 'Cellpose · manual diameter')]
         for column, (labels, title) in enumerate(panels):
             ax = axes[row, column]
             ax.imshow(patch['rgb'], extent=(0, width, height, 0), interpolation='nearest')

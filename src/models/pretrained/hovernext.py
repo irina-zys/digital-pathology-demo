@@ -1,14 +1,15 @@
 """Bounded CPU-capable HoVer-NeXt PanNuke inference on one 256-pixel RGB patch.
 
 The pinned upstream architecture and array postprocessing live in third_party.
-This adapter uses one unaugmented view, without upstream WSI tiling or TTA; it
-makes no claim of reproducing published benchmark performance.
+This patch adapter includes the published spatial/HED TTA and released thresholds.
+It omits upstream WSI tiling/stitching and does not reproduce a full benchmark.
 """
 
 import hashlib
 import importlib.metadata
 import importlib.util
 import json
+import math
 from pathlib import Path
 import tomllib
 from src.utils.files import sha256
@@ -107,7 +108,7 @@ def load_hovernext(checkpoint_dir, device="cpu"):
         "training_mpp": 0.25, "input_mpp_verified": False,
         "scale_assumption": "Input pixels are assumed to match PanNuke's 0.25 micrometres/pixel; this adapter cannot establish PNG calibration and does not resample.",
         "preprocessing": "uint8 RGB divided by 255; BCHW float32; no stain or ImageNet normalization",
-        "tta_views": 0, "inference_mode": "one direct 256x256 patch; no WSI tiling or border padding",
+        "inference_mode": "one direct 256x256 patch; no WSI tiling or border padding",
         "postprocessing_metric": metric,
         "foreground_thresholds": thresholds["fg"].tolist(), "seed_thresholds": thresholds["seed"].tolist(),
         "min_object_pixels_exclusive": constants.MIN_THRESHS_PANNUKE,
@@ -122,8 +123,79 @@ def load_hovernext(checkpoint_dir, device="cpu"):
             "thresholds": thresholds, "metadata": metadata}
 
 
-def predict_hovernext(rgb, loaded, *, max_pixels=65536):
+
+def _warp(tensor, matrix, mode):
+    """Pinned upstream affine sampling, including its interpolation conventions."""
+    import torch
+    from torch.nn import functional as F
+
+    theta = torch.tensor([matrix], device=tensor.device, dtype=tensor.dtype)
+    grid = F.affine_grid(theta, tensor.size(), align_corners=False)
+    return F.grid_sample(tensor, grid, mode=mode, padding_mode="zeros", align_corners=False)
+
+
+def _predict_probabilities(tensor, model, spatial_params, tta_views, tta_seed):
+    """Patch-only adaptation of pinned inference.py and augmentations.py (GPLv3).
+
+    Preserve upstream sampling and averaging; local RNGs leave caller state alone.
+    One view at a time bounds model activation memory independently of TTA count.
+    """
+    import torch
+
+    rng = np.random.RandomState(tta_seed)
+    generator = torch.Generator(device="cpu").manual_seed(tta_seed)
+    rgb_matrix = np.array([[0.65, 0.70, 0.29], [0.07, 0.99, 0.11],
+                           [0.27, 0.57, 0.78]], dtype=np.float32)
+    rgb_from_hed = torch.from_numpy(rgb_matrix).to(tensor.device)
+    hed_from_rgb = torch.from_numpy(np.linalg.inv(rgb_matrix)).to(tensor.device)
+    log_epsilon = torch.tensor(1e-6, device=tensor.device).log()
+    instance_views, class_views = [], []
+    with torch.inference_mode():
+        for _ in range(max(1, tta_views)):
+            view = tensor
+            mirror = rotation = inverse_rotation = None
+            if tta_views:
+                active = {key: bool(rng.binomial(1, value["prob"]))
+                          for key, value in spatial_params.items()}
+                if active["mirror"]:
+                    x = -1 if rng.binomial(1, spatial_params["mirror"]["prob_x"]) else 1
+                    y = -1 if rng.binomial(1, spatial_params["mirror"]["prob_y"]) else 1
+                    mirror = [[x, 0., 0.], [0., y, 0.]]
+                    view = _warp(view, mirror, "bilinear")
+                if active["rotate"]:
+                    angle = math.radians(rng.choice([-270, -180, -90, 90, 180, 270]))
+                    cosine, sine = math.cos(angle), math.sin(angle)
+                    rotation = [[cosine, -sine, 0.], [sine, cosine, 0.]]
+                    inverse_rotation = [[cosine, sine, 0.], [-sine, cosine, 0.]]
+                    view = _warp(view, rotation, "bilinear")
+                # Upstream HED: per-channel multiplicative and additive perturbations.
+                scale = torch.empty(1, 3).uniform_(-.05, .05, generator=generator).to(tensor.device)
+                bias = torch.empty(1, 3).uniform_(-.03, .03, generator=generator).to(tensor.device)
+                hed = (view.movedim(1, -1).clamp(min=1e-6).log() / log_epsilon) @ hed_from_rgb
+                hed = hed * (1 + scale[:, None, None, :]) + bias[:, None, None, :]
+                view = torch.exp((hed * log_epsilon) @ rgb_from_hed).clamp(0, 1).movedim(-1, 1)
+            logits = model(view)
+            if logits.shape != (1, 11, 256, 256) or not torch.isfinite(logits).all():
+                raise RuntimeError("Invalid HoVer-NeXt logits")
+            if rotation is not None:
+                logits = _warp(logits, inverse_rotation, "nearest")
+            if mirror is not None:
+                logits = _warp(logits, mirror, "nearest")
+            instance_views.append(logits[:, 2:5].softmax(1))
+            class_views.append(logits[:, 5:].softmax(1))
+        # The publication averages per-view probabilities, not per-view logits.
+        instance = torch.stack(instance_views).mean(0)[0].cpu().numpy()
+        classes = torch.stack(class_views).mean(0)[0].cpu().numpy()
+    return instance, classes
+
+
+def predict_hovernext(rgb, loaded, *, max_pixels=65536, tta_views=16, tta_seed=42):
     """Predict one uint8 RGB 256x256 patch without resizing or file writes.
+
+    Defaults use pinned inference spatial/HED settings with the release's
+    16-view count and a fixed seed.
+    ``tta_views=0`` retains direct inference for explicit diagnostics. Counts
+    are bounded at 16, processed sequentially; caller RNG states are unchanged.
 
     Return ``instance_mask`` (uint32, background 0), ``classes`` (positive ID to
     class_id/class_name), raw ``probabilities`` (instance:3xHxW, class:6xHxW), and
@@ -135,18 +207,18 @@ def predict_hovernext(rgb, loaded, *, max_pixels=65536):
         raise ValueError("HoVer-NeXt patch input must be an exact 256x256 uint8 RGB array; crop explicitly, do not resize implicitly")
     if type(max_pixels) is not int or max_pixels < 1 or rgb.shape[0] * rgb.shape[1] > max_pixels:
         raise ValueError("HoVer-NeXt input exceeds max_pixels")
+    if type(tta_views) is not int or not 0 <= tta_views <= 16:
+        raise ValueError("tta_views must be an integer from 0 to 16")
+    if type(tta_seed) is not int or not 0 <= tta_seed < 2**32:
+        raise ValueError("tta_seed must be an integer from 0 to 2**32 - 1")
     import torch
 
     tensor = torch.from_numpy(np.array(rgb, copy=True)).permute(2, 0, 1).unsqueeze(0)
     tensor = tensor.to(device=loaded["device"], dtype=torch.float32).div_(255)
     model = loaded["model"]
     model.eval()
-    with torch.inference_mode():
-        logits = model(tensor)
-        if logits.shape != (1, 11, 256, 256) or not torch.isfinite(logits).all():
-            raise RuntimeError("Invalid HoVer-NeXt logits")
-        instance_probs = logits[:, 2:5].softmax(1)[0].cpu().numpy()
-        class_probs = logits[:, 5:].softmax(1)[0].cpu().numpy()
+    instance_probs, class_probs = _predict_probabilities(
+        tensor, model, loaded["constants"].TTA_AUG_PARAMS, tta_views, tta_seed)
     # Preserve upstream storage/argmax semantics before the array-only watershed.
     stored_classes = (softmax(class_probs.astype(np.float32), axis=0) * 255).astype(np.uint8)
     winners = stored_classes[1:].argmax(axis=0)
@@ -168,6 +240,14 @@ def predict_hovernext(rgb, loaded, *, max_pixels=65536):
     if set(np.unique(instances)) - {0} != mapping.keys():
         raise RuntimeError("HoVer-NeXt instances and class table disagree")
     metadata = {**loaded["metadata"], "input_shape": list(rgb.shape), "max_pixels": max_pixels,
+                "recipe": "published_spatial_hed_tta" if tta_views else "direct_unaugmented",
+                "tta_views": tta_views, "tta_seed": tta_seed if tta_views else None,
+                "tta": {"spatial": loaded["constants"].TTA_AUG_PARAMS,
+                        "hed_scale_uniform": [-.05, .05], "hed_bias_uniform": [-.03, .03],
+                        "forward_interpolation": "bilinear", "inverse_interpolation": "nearest",
+                        "aggregation": "mean of inverse-transformed per-view softmax probabilities",
+                        "precision": "float32", "view_batch_size": 1} if tta_views else None,
+                "annotations_supplied": False,
                 "input_rgb_sha256": hashlib.sha256(rgb.tobytes()).hexdigest(),
                 "instances": len(mapping), "foreground_pixels": int(np.count_nonzero(instances)),
                 "background_id": 0, "probability_class_ids": list(range(6)), "watershed_skipped": bool(skip)}
