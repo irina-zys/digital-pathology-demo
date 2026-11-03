@@ -16,7 +16,12 @@
 
 """CODAIT colour filters. True means KEEP; invert to obtain an artefact mask."""
 
+from collections.abc import Mapping
+
 import numpy as np
+
+# Re-export for callers using the original filter API.
+from src.image_utils import validate_rgb
 
 PEN_THRESHOLDS = {
     "red": ((150, 80, 90), (110, 20, 30), (185, 65, 105), (195, 85, 125),
@@ -31,21 +36,38 @@ PEN_THRESHOLDS = {
 }
 
 
-def validate_rgb(rgb):
-    if not isinstance(rgb, np.ndarray) or rgb.dtype != np.uint8:
-        raise ValueError("Expected uint8 RGB array, values 0-255")
-    if rgb.ndim != 3 or rgb.shape[2] != 3 or min(rgb.shape[:2]) < 1:
-        raise ValueError("Expected nonempty H x W x 3 RGB image")
+def resolve_pen_thresholds(overrides=None):
+    """Return validated RGB rule triples; omitted colours retain CODAIT defaults.
+
+    Rules are OR'ed per colour. Red: R>r & G<g & B<b; green: R<r & G>g
+    & B>b; blue: R<r & G<g & B>b. A supplied colour replaces all its rules.
+    Empty rules disable that colour. Values are integers in 0-255.
+    """
+    if overrides is not None and not isinstance(overrides, Mapping):
+        raise ValueError("pen_thresholds must be a mapping of colour to RGB rule triples")
+    rules = dict(PEN_THRESHOLDS)
+    for color, values in (overrides or {}).items():
+        if color not in rules:
+            raise ValueError(f"Unknown pen colour: {color}")
+        array = np.asarray(values)
+        if array.size == 0 and array.shape == (0,):
+            rules[color] = ()
+            continue
+        if array.ndim != 2 or array.shape[1] != 3 or array.dtype.kind not in "iu" or np.any((array < 0) | (array > 255)):
+            raise ValueError(f"{color} pen rules must be N x 3 integer RGB thresholds in 0-255")
+        rules[color] = tuple(tuple(map(int, row)) for row in array)
+    return rules
 
 
-def filter_pen(rgb, color):
-    """Return the original CODAIT pen filter's KEEP mask for one colour."""
+def filter_pen(rgb, color, thresholds=None):
+    """Return a KEEP mask using CODAIT defaults or custom rules for this colour."""
     validate_rgb(rgb)
     if color not in PEN_THRESHOLDS:
         raise ValueError(f"Unknown pen colour: {color}")
     red, green, blue = rgb.transpose(2, 0, 1)
     keep = np.ones(rgb.shape[:2], dtype=bool)
-    for r, g, b in PEN_THRESHOLDS[color]:
+    rules = resolve_pen_thresholds({color: thresholds} if thresholds is not None else None)
+    for r, g, b in rules[color]:
         if color == "red":
             suspect = (red > r) & (green < g) & (blue < b)
         elif color == "green":

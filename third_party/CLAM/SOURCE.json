@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/mahmoodlab/CLAM",
+  "commit": "53e2409d4a8189c682c173382964a85f114f923c",
+  "license": "GPL-3.0",
+  "files": {
+    "wsi_core/WholeSlideImage.py": "e1361a8379bf144d450efbef1ae24bf9c8597b99c729da4e93a73eb5f18daebc",
+    "wsi_core/wsi_utils.py": "8b201f331512c141f120cce5e5c580627ea9af1e9f3fc41d3ed884ed633898f7",
+    "wsi_core/util_classes.py": "ef9bd3d685314cf5aba55c7e3d41ec911efb8567e769797d7534b05c1748e0db",
+    "utils/file_utils.py": "a808d284dbd1464f728f8709e38e2bcf9c6aeb19d919dfa2cff9527fb06a48ca",
+    "wsi_core/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "utils/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "LICENSE.md": "0e1372769c3ea4ce2a8fb0955a02adf8e88d1804c6143518dee9f969eb0911f7"
+  }
+}

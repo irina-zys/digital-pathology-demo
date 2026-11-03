@@ -3,6 +3,7 @@
 from html import escape
 
 
+
 def write_report(output, slides, method):
     sections = []
     for slide in slides:
@@ -12,17 +13,28 @@ def write_report(output, slides, method):
                                 ("artifact_mask", "Suspected artefacts"), ("clean_mask", "Retained tissue"),
                                 ("filtered", "Filtered preview"), ("overlay", "Review overlay")):
             panels.append(f'<figure><a href="{folder}/{filename}.png"><img loading="lazy" src="{folder}/{filename}.png" alt="{title}"></a><figcaption>{title}</figcaption></figure>')
+        for name, title in (("codait_filtered", "After CODAIT filtering"),
+                            ("tia_otsu", "TIA preliminary tissue"),
+                            ("clam_mask", "CLAM-style tissue"), ("filled_holes", "Filled small holes")):
+            path = slide.get("preprocessing_stages", {}).get(name)
+            if path:
+                safe_path = escape(path, quote=True)
+                panels.append(f'<figure><a href="{safe_path}"><img loading="lazy" src="{safe_path}" alt="{title}"></a><figcaption>{title}</figcaption></figure>')
+        prefilter_fraction = slide.get("preprocessing", {}).get("prefilter_excluded_fraction")
+        prefilter = (f"<p>CODAIT prefilter excluded {prefilter_fraction:.1%} of all thumbnail pixels.</p>"
+                     if prefilter_fraction is not None else "")
         warnings = " · ".join(escape(w) for w in slide["warnings"])
         exports = []
         for layout in slide.get("exports", {}).get("layouts", []):
             exports.append(f'<a href="{escape(layout["coords"], quote=True)}">{layout["patch_size"]}-pixel coordinates ({layout["exported_count"]} selected)</a>')
+        stain = f" · {escape(slide['stain'])}" if slide.get("stain") else ""
         width, height = slide["dimensions"]
-        sections.append(f'''<section><h2>{escape(slide['name'])} <small>{escape(slide['label'])}</small></h2>
+        sections.append(f'''<section><h2>{escape(slide['name'])} <small>{escape(slide['label'])}{stain}</small></h2>
 <p>{width:,} × {height:,} pixels · candidate tissue {slide['tissue_fraction']:.1%} · retained {slide['retained_fraction']:.1%}
-· {slide['removed_pixels']:,} candidate pixels excluded</p><p class="warning">{warnings}</p>
+· final cleanup excluded {slide['removed_pixels']:,} candidate pixels</p>{prefilter}<p class="warning">{warnings}</p>
 <div class="grid">{''.join(panels)}</div>
 <p><a href="{folder}/metadata.json">Slide metadata and counts</a> ·
-<a href="{folder}/removed_tissue.png">Removed candidate tissue mask</a></p>
+<a href="{folder}/removed_tissue.png">Final cleanup mask</a></p>
 <p>{' · '.join(exports)}</p></section>''')
     page = '''<!doctype html><html lang="en"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>WSI preprocessing demo</title>
@@ -36,7 +48,7 @@ figcaption{font-weight:600;padding:8px 0}.warning{color:#98331c}header p{max-wid
 @media(max-width:800px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}main{padding:16px}}
 @media(max-width:500px){.grid{grid-template-columns:1fr}}</style><main><header>
 <p>Digital pathology · preprocessing review</p><h1>From slide to tissue mask</h1>
-<p>Green overlay: retained candidate tissue. Orange overlay: excluded candidate tissue.
+<p>Green overlay: retained candidate tissue. Orange overlay: candidate tissue excluded during final cleanup.
 Masks use white for selected pixels. Filtered previews replace excluded areas with white;
 the source slides are unchanged. Click a preview for its PNG.</p>
 <p>Pen, dark-pixel and size rules are heuristics. They can remove real tissue and miss artefacts.
