@@ -12,7 +12,7 @@ Freeze model weights, channels, diameter, thresholds, minimum-area/edge policies
 
 ### Match nuclei, then report the error types
 
-Use the same valid annotation region for both masks. Declare ambiguity and crop-edge handling before evaluation. This demo retains frame-touching nuclei, marked **B**; for a primary analysis of intact nuclei, use a predefined interior scoring region with sufficient image/annotation context and a documented object-ownership rule. Report edge-object sensitivity separately rather than silently dropping difficult objects.
+Use the same valid annotation region for both masks. Declare ambiguity and crop-edge handling before evaluation. This demo retains frame-touching nuclei without per-object text labels; for a primary analysis of intact nuclei, use a predefined interior scoring region with sufficient image/annotation context and a documented object-ownership rule. Report edge-object sensitivity separately rather than silently dropping difficult objects.
 
 Match masks one-to-one with the declared criterion, initially **IoU ≥0.5**. A matched pair is **TP**; an unmatched annotated nucleus is **FN**; an unmatched prediction is **FP**. This still uses IoU to establish correspondence, but measures detection errors at the nucleus level. Splits and merges can create extra or missed objects; inspect them separately. The existing `src.metrics.compare_instances` returns these counts and IDs for each patch.
 

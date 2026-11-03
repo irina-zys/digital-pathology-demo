@@ -5,7 +5,7 @@
 
 The [annotation and segmentation demo](../notebooks/annotation_segmentation_demo.ipynb)
 walks through predictions, errors and one controlled polarity experiment on two
-real 256 × 256 patches, then exports annotations and provenance in the final section. It uses one complete CytoNuke image and one explicit centre crop of a
+real 256 × 256 patches, then exports annotations and provenance before the evaluation recommendations. It uses one complete CytoNuke image and one explicit centre crop of a
 NuInsSeg image. Source images, labels and ambiguous masks remain unchanged.
 The separate [preprocessing demo](../notebooks/preprocessing_demo.ipynb) covers
 WSI tissue masks, patch coverage and stain comparisons.
@@ -36,7 +36,11 @@ provenance and refuses mismatched existing files. Loaders never download weights
 | --- | --- | --- |
 | Original UNI (TIMM comparison) | `data/models/huggingface/hub/models--MahmoodLab--UNI/` | One 1024-dimensional embedding; square uint8 RGB patch, resized to 224 with ImageNet normalization |
 | HoVer-NeXt PanNuke Tiny fold 1 | `data/models/hovernext/pannuke_convnextv2_tiny_1/` | Nucleus instances and five PanNuke classes; exactly 256 × 256 RGB, divided by 255 |
-| Classical Cellpose nuclei (3.1.1.2) | `data/models/cellpose/nucleitorch_0` | Nucleus instances; RGB patch at most 256 × 256; explicit diameter and polarity settings |
+| Classical Cellpose nuclei (3.1.1.2) | `data/models/cellpose/nucleitorch_0` and `size_nucleitorch_0.npy` | Nucleus instances; RGB patch at most 256 × 256; H&E demo uses inverted grayscale and image-based diameter estimation |
+
+`download_pretrained.py --model cellpose` prepares both the segmentation checkpoint
+and its matching official size-model asset. Estimation requires both verified
+files; neither inference loader downloads missing weights.
 
 UNI is gated and included in the [classification comparison](../notebooks/wsi_classification_demo.ipynb).
 After provider approval, sign in using the standard local Hugging Face login and
@@ -77,7 +81,7 @@ labels = result["instance_mask"]  # uint32, zero background
 cellpose = run_cellpose_patch(
     rgb_256, "outputs/cellpose-example",
     checkpoint="data/models/cellpose/nucleitorch_0",
-    diameter=17, channels=(0, 0), invert=False, timeout_seconds=120,
+    diameter=0, channels=(0, 0), invert=True, timeout_seconds=120,
 )
 ```
 
@@ -88,8 +92,22 @@ PNG. Callers retain source file and crop coordinates alongside these outputs.
 Pass `cache_dir` to put the child process Numba cache in a writable local directory.
 The preview uses the pinned Cellpose library’s channel-selection and normalization
 functions before diameter rescaling; it does not change network preprocessing.
-The Cellpose loader verifies the pinned local checkpoint before use. Its digest
-identifies a verified official download; it is locally recorded, not a publisher-supplied checksum.
+The Cellpose loader verifies the pinned local assets before use. These digests
+identify verified official downloads; they are locally recorded, not publisher-supplied checksums.
+
+`diameter=0` or `None` requests the matching official `SizeModel`: a style-based
+estimate is refined using predicted objects from the same normalized, inverted
+grayscale signal. Ground truth is never supplied to estimation. A positive manual
+diameter is an explicit alternative; the generic API default of 17 pixels remains
+a manual/historical setting, not automatic H&E calibration. Final segmentation
+uses `niter=None`, allowing the pinned library's diameter-dependent dynamics default.
+See the [official v3 diameter guidance](https://cellpose.readthedocs.io/en/v3.1.1.1/settings.html#diameter)
+and [API](https://cellpose.readthedocs.io/en/v3.1.1.1/api.html).
+
+The `diameter_estimation` record includes the method, selected and style diameters,
+refinement object count and `fallback_to_training_mean`. If refinement finds no
+objects, the run saves failure/calibration metadata and fails visibly rather than
+presenting a fallback to 17 pixels as a successful estimate.
 
 `load_uni(checkpoint)` strictly loads the pinned original UNI weights;
 `embed_uni(rgb, loaded)` returns one finite float32 vector with shape `(1024,)`.
@@ -113,10 +131,13 @@ itself performs no downloads. The fixed inputs remain the first CytoNuke image a
 `human_bladder_01` centre crop at `(128, 128, 256, 256)`. Annotation preparation
 bounds COCO JSON parsing to 64 MB and source images to 512 × 512 pixels.
 
-A top-to-bottom run makes four baseline model calls plus one **predeclared
-Cellpose inversion experiment** on NuInsSeg. The same RGB, weights, channels,
-diameter=17 and thresholds are used; only intensity polarity changes. Both
-outcomes are retained. This is not parameter selection on a benchmark.
+A top-to-bottom run makes four baseline model calls plus one controlled Cellpose
+polarity experiment on NuInsSeg. The primary H&E Cellpose calls use **inverted
+grayscale** with diameter estimated from the image alone; HoVer-NeXt keeps its
+existing pretrained transform. The negative control turns inversion **off** while
+holding the primary run's calibrated diameter, RGB, weights, channels and thresholds
+fixed. Both outcomes are retained. Original noninverted, 17-pixel outputs remain
+historical failure examples, not the primary Cellpose comparison.
 
 The notebook also compares raw nucleus predictions with a minimum-area filter
 and an edge-aware version of that filter, before the input-polarity experiment.
@@ -159,8 +180,8 @@ CytoNuke category 0 nuclei remain separate from whole cells. Last-wins
 rasterization resolves overlaps in reference TIFFs; GeoJSON retains original
 polygons. NuInsSeg uses `label masks modify`, and its ambiguity mask stays separate.
 
-Automated execution uses a 120-second timeout per code cell and one PyTorch CPU
-thread. Cellpose also has a 120-second worker timeout. Interactive HoVer-NeXt
+Automated validation records its per-cell timeout in the execution receipt and
+uses one PyTorch CPU thread. Cellpose also has a 120-second worker timeout. Interactive HoVer-NeXt
 calls have an input-pixel bound but no wall-clock interrupt timer.
 
 These two patches illustrate mechanics and failure inspection, not typing
