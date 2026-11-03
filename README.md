@@ -79,6 +79,7 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | Obtain datasets and create QuPath projects | [Datasets](docs/datasets.md) |
 | Walk through metadata, masks, QC and optional stain comparisons | [Introductory demo](notebooks/introductory_demo.ipynb) |
 | Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
+| Plan evaluation splits, metrics and reference annotations | [Computational pathology considerations](docs/computational-pathology-considerations.md) |
 | Run Ruff and enable Git checks | [Linting and pre-commit hooks](docs/linting.md) |
 | Review upstream sources and licences | [Third-party attribution](third_party/README.md) |
 
