@@ -63,6 +63,7 @@ assumptions, HDF5 attributes, output folders and verification commands.
 
 | Task | Guide |
 | --- | --- |
+| Understand Hydra and the code layout | [Hydra and project structure](docs/hydra-and-project-structure.md) |
 | Configure masking, tiling and outputs | [Preprocessing](docs/preprocessing.md) |
 | Download TCGA/KPMP slides and create QuPath projects | [Datasets](docs/datasets.md) |
 | Walk through metadata, masks, QC and optional stain comparisons | [MSc notebook](notebooks/wsi_preprocessing_msc.ipynb) |
