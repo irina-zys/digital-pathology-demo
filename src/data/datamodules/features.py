@@ -1,5 +1,6 @@
 """Lightning lifecycle for verified complete feature bags."""
 from pathlib import Path
+from torch.utils.data import DataLoader
 import torch
 from hydra.utils import to_absolute_path
 from src.data.datamodules.base import ManifestDataModule
@@ -11,7 +12,7 @@ from src.utils.files import sha256
 
 class FeatureBagDataModule(ManifestDataModule):
     def __init__(self, manifest, data_root, class_names, input_dim, encoder_sha256, task='mil',
-                 batch_size=1, num_workers=0):
+                 batch_size=1, num_workers=0, seed=42):
         super().__init__()
         self.save_hyperparameters()
         if task != 'mil' or batch_size != 1 or num_workers != 0:
@@ -52,3 +53,9 @@ class FeatureBagDataModule(ManifestDataModule):
             self.rows, self.samples = rows, samples
             self.datasets = {split: FeatureBagDataset(items, arrays) for split, items in samples.items()}
         self.require_splits(stage)
+
+    def _loader(self, split):
+        # Match slide order across pooling architectures despite different initialization RNG draws.
+        generator = torch.Generator().manual_seed(self.hparams.seed)
+        return DataLoader(self.datasets[split], batch_size=1, shuffle=split == "train",
+                          num_workers=0, generator=generator)
