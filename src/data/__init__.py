@@ -1,0 +1,1 @@
+"""Manifest-backed vision data."""
