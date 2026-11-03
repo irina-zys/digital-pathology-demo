@@ -13,6 +13,27 @@ state. Training callbacks/configuration choose early stopping and checkpoint
 monitoring. Runners coordinate execution; they do not implement score formulas.
 Foreground Dice measures binary overlap, not separation of individual nuclei.
 
+## Recipe fairness in the teaching demo
+
+The primary comparison gives each model its documented inference procedure.
+HoVer-NeXt uses RGB/255, 16 seeded test-time views (spatial flips/quarter-turns and
+HED colour perturbations), probability averaging and the released PanNuke watershed
+thresholds. Cellpose uses inverted grayscale, percentile normalization and the
+official image-only diameter estimator with mask refinement, followed by its
+default segmentation thresholds and diameter-dependent dynamics. Neither recipe
+receives reference annotations. The same RGB crop, ambiguity exclusion and matching
+rule are used for both models. Equal normalization, augmentation counts or runtime
+are not required; record each recipe and its complete runtime.
+
+The HoVer-NeXt adapter remains a direct 256 × 256 patch implementation with
+unverified physical scale and no WSI context/stitching. It does not reproduce the
+release's five evaluation rounds. See [the recipes and upstream sources](pretrained-models.md#reusable-functions).
+These two examples influenced development, so their scores remain a development
+comparison. A future benchmark needs a shared development split separate from
+the held-out groups, a declared tuning budget and search space for each model,
+and frozen recipes before evaluating the same held-out patient/slide groups. Image-adaptive sizing within a frozen
+recipe is permitted; selecting the recipe from held-out annotation scores is not.
+
 ## Proposed held-out evaluation
 
 **Proposed next evaluation; not executed by this two-patch demo.** Score individual **nuclei** against annotated ground truth. Whole-cell evaluation needs whole-cell annotations and a model with that target; do not mix CytoNuke's nucleus and whole-cell categories.

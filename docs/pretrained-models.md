@@ -37,7 +37,7 @@ notebook inference paths require prepared local weights; acquisition is explicit
 | Model | Local checkpoint | Purpose and input contract |
 | --- | --- | --- |
 | Original UNI (TIMM comparison) | `data/models/huggingface/hub/models--MahmoodLab--UNI/` | One 1024-dimensional embedding; square uint8 RGB patch, resized to 224 with ImageNet normalization |
-| HoVer-NeXt PanNuke Tiny fold 1 | `data/models/hovernext/pannuke_convnextv2_tiny_1/` | Nucleus instances and five PanNuke classes; exactly 256 × 256 RGB, divided by 255 |
+| HoVer-NeXt PanNuke Tiny fold 1 | `data/models/hovernext/pannuke_convnextv2_tiny_1/` | Nucleus instances and five PanNuke classes; exactly 256 × 256 RGB/255, 16-view test-time augmentation and released watershed thresholds |
 | Classical Cellpose nuclei (3.1.1.2) | `data/models/cellpose/nucleitorch_0` and `size_nucleitorch_0.npy` | Nucleus instances; RGB patch at most 256 × 256; H&E demo uses inverted grayscale and image-based diameter estimation |
 
 `download_pretrained.py --model cellpose` prepares both the segmentation checkpoint
@@ -84,7 +84,7 @@ from src.models.pretrained.cellpose import run_cellpose_patch
 
 torch.set_num_threads(1)
 model = load_hovernext("data/models/hovernext/pannuke_convnextv2_tiny_1", device="cpu")
-result = predict_hovernext(rgb_256, model, max_pixels=65_536)
+result = predict_hovernext(rgb_256, model, max_pixels=65_536, tta_views=16, tta_seed=42)
 labels = result["instance_mask"]  # uint32, zero background
 
 cellpose = run_cellpose_patch(
@@ -103,6 +103,25 @@ The preview uses the pinned Cellpose library’s channel-selection and normaliza
 functions before diameter rescaling; it does not change network preprocessing.
 The Cellpose loader verifies the pinned local assets before use. These digests
 identify verified official downloads; they are locally recorded, not publisher-supplied checksums.
+
+HoVer-NeXt defaults to the released PanNuke configuration's **16 test-time views**
+and seed **42**. Augmentation settings come from the pinned inference code;
+the view count and seed come from the released model configuration. Each view
+uses flips/quarter-turns and HED colour-space
+perturbations (scale 0.05, bias 0.03). The adapter follows the pinned upstream
+spatial transform: bilinear forward sampling, nearest-neighbour inverse sampling
+of logits, then per-view softmax and probability averaging before the released
+PanNuke foreground/seed thresholds and watershed postprocessing. This is performed
+in float32, one view at a time, to bound CPU memory; it adds no dependencies.
+The seed fixes the local stochastic recipe, without promising bitwise equivalence
+to upstream GPU execution. See the [pinned inference implementation](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/inference.py#L207-L267),
+[colour augmentation](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/augmentations.py)
+and [spatial augmentation](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/spatial_augmenter.py).
+
+This remains inference on one direct 256 × 256 patch, without surrounding slide
+context, WSI overlap/stitching or physical-scale correction. PanNuke's 0.25 µm/pixel
+training scale is unverified for the demo PNGs. A single seeded prediction does not
+reproduce the release's five evaluation rounds or its full benchmark protocol.
 
 `diameter=0` or `None` requests the matching official `SizeModel`: a style-based
 estimate is refined using predicted objects from the same normalized, inverted
@@ -142,8 +161,9 @@ bounds COCO JSON parsing to 64 MB and source images to 512 × 512 pixels.
 
 A top-to-bottom run makes four baseline model calls plus one controlled Cellpose
 polarity experiment on NuInsSeg. The primary H&E Cellpose calls use **inverted
-grayscale** with diameter estimated from the image alone; HoVer-NeXt keeps its
-existing pretrained transform. The negative control turns inversion **off** while
+grayscale** with diameter estimated from the image alone; HoVer-NeXt uses its
+16-view published augmentation recipe and released watershed thresholds. The
+negative control turns inversion **off** while
 holding the primary run's calibrated diameter, RGB, weights, channels and thresholds
 fixed. Both outcomes are retained. Original noninverted, 17-pixel outputs remain
 historical failure examples, not the primary Cellpose comparison.
@@ -193,18 +213,31 @@ Automated validation records its per-cell timeout in the execution receipt and
 uses one PyTorch CPU thread. Cellpose also has a 120-second worker timeout. Interactive HoVer-NeXt
 calls have an input-pixel bound but no wall-clock interrupt timer.
 
+The refined notebook was executed on both real patches on 2026-11-03: all six
+code cells and five prediction requests passed in 45 seconds on one CPU thread,
+within a five-minute bound. The HoVer-NeXt adapter also matched the pinned
+upstream CPU probabilities and final instance mask on the real NuInsSeg crop
+at 16 views/seed 42. Input hashes and caller RNG states remained unchanged;
+invalid TTA/seed/pixel bounds were rejected. Local execution receipts are under
+`outputs/refined_segmentation_20261103/`; original runs remain untouched.
+
 These two patches illustrate mechanics and failure inspection, not typing
-accuracy, generalization or clinical performance. HoVer-NeXt uses one direct
-view, no TTA and upstream postprocessing. Its PanNuke 0.25 µm/pixel training scale
-is not established for these PNGs. Cellpose uses the classical nuclei model and
-its matching size estimator, not another Cellpose version. Size estimation adds
-inference work and is included when reporting end-to-end runtime.
+accuracy, generalization or clinical performance. Both models receive their
+model-specific inference recipe: HoVer-NeXt uses 16 augmented views and released
+postprocessing, while Cellpose uses inverted grayscale and its matching size
+estimator. Neither uses annotations during inference. The same RGB crop, ambiguity
+mask and matching policy apply to both. Both augmentation and size estimation add
+inference work and must be included when reporting end-to-end runtime; equal view
+counts or equal pixel normalization are not a fairness requirement.
 
 This revised recipe follows diagnosis of the original poor results on these two
 annotated patches. Image-only estimation does not make that post-hoc choice an
 independent benchmark. Do not select a winning diameter, polarity or model from
-their annotation scores. Freeze preprocessing on a separate development set before
-held-out evaluation; training-data overlap has not been ruled out. The common
+their annotation scores. This remains a **development comparison of declared
+recipes**. For a held-out benchmark, give both models the same development split,
+separate from the evaluation groups, and declare each model's tuning budget and
+search space. Freeze model-specific preprocessing/augmentation/size policies and
+thresholds, then evaluate once on the same held-out groups. Training-data overlap has not been ruled out. The common
 crop, ambiguity exclusion and one-to-one matching rules remain unchanged.
 
 ## Sources and licences

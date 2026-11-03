@@ -65,8 +65,19 @@ copied. Keep the GPLv3 licence and source notices when redistributing this subse
 `SOURCE.json` records upstream/local hashes and the narrow adaptation: selected
 array postprocessing functions use NumPy storage in place of a Zarr array.
 Architecture and class constants are unchanged. The adapter in `src/models/pretrained/hovernext.py`
-loads the verified PanNuke Tiny fold-1 checkpoint and official thresholds, then
-performs one direct 256-pixel inference without WSI tiling or test-time augmentation.
+loads the verified PanNuke Tiny fold-1 checkpoint and official thresholds. Its
+16-view test-time augmentation follows the release's `params.toml` (`tta=16`,
+`seed=42`) and pinned upstream
+[inference](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/inference.py#L207-L267),
+[colour augmentation](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/augmentations.py)
+and [spatial augmentation](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/spatial_augmenter.py):
+flips/quarter-turns, HED scale 0.05/bias 0.03 perturbations, bilinear forward and
+nearest-neighbour inverse-logit sampling, per-view softmax and probability
+averaging. The local implementation uses float32 and processes one view at a time
+without adding dependencies. Preserve the GPLv3 attribution for this adaptation.
+It still handles one direct 256-pixel patch, without WSI tiling/stitching or
+verified physical-scale correction, and does not reproduce five evaluation rounds
+or the full published benchmark.
 
 Weights are downloaded separately into ignored `data/models/`, under the
 [release's CC-BY-NC-SA-4.0 licence](https://zenodo.org/records/10635618).
