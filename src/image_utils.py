@@ -86,10 +86,31 @@ def fill_small_holes(mask, max_area):
     return mask | fill[labels]
 
 
-def white_background(rgb, tissue_mask):
-    """Copy RGB and set non-tissue pixels to the common white value (255,255,255)."""
+def fill_background(rgb, tissue_mask, background_rgb):
+    """Copy RGB and replace non-tissue pixels with one explicit integer RGB colour."""
     validate_rgb(rgb)
     validate_mask(tissue_mask, rgb.shape[:2])
+    colour = np.asarray(background_rgb)
+    if colour.shape != (3,) or colour.dtype.kind not in "iu" or np.any((colour < 0) | (colour > 255)):
+        raise ValueError("background_rgb must contain three integers in 0-255")
     result = rgb.copy()
-    result[~tissue_mask] = 255
+    result[~tissue_mask] = colour
     return result
+
+
+def mean_background_color(rgb, background_mask):
+    """Return floating-point mean RGB of caller-selected background pixels.
+
+    The caller defines background and artifact exclusions; empty samples fail.
+    Round with np.rint(...).astype(np.uint8) when an integer fill colour is needed.
+    """
+    validate_rgb(rgb)
+    validate_mask(background_mask, rgb.shape[:2])
+    if not background_mask.any():
+        raise ValueError("No background pixels selected for colour estimation")
+    return rgb[background_mask].mean(axis=0)
+
+
+def white_background(rgb, tissue_mask):
+    """Compatibility helper for the white working images used by masking/QC."""
+    return fill_background(rgb, tissue_mask, (255, 255, 255))
