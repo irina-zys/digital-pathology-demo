@@ -218,17 +218,17 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
         if handle is not None:
             handle.close()
     dataset = root / "dataset.csv"
+    fields = ["case_id", "slide_id", "label", "wsi_path", "stain", "sample_id"]
     exists = dataset.exists()
+    if exists:
+        with dataset.open(newline="") as stream:
+            if next(csv.reader(stream), None) != fields:
+                raise ValueError("Existing dataset.csv has a different schema; use a fresh export directory")
     with dataset.open("a", newline="") as stream:
-        fields = ["case_id", "slide_id", "label", "wsi_path"]
-        if row.get("stain"):
-            fields += ["stain", "sample_id"]
         writer = csv.DictWriter(stream, fieldnames=fields)
         if not exists:
             writer.writeheader()
-        item = {"case_id": row.get("case_submitter_id", slide_id), "slide_id": slide_id,
-                "label": row.get("label", "unlabelled"), "wsi_path": f"WSIs/{path.name}"}
-        if row.get("stain"):
-            item.update(stain=row["stain"], sample_id=row.get("sample_id", ""))
-        writer.writerow(item)
+        writer.writerow({"case_id": (row.get("case_submitter_id") or "").strip() or (row.get("case_id") or "").strip(),
+            "slide_id": slide_id, "label": row.get("label") or "unlabelled", "wsi_path": f"WSIs/{path.name}",
+            "stain": row.get("stain") or "", "sample_id": row.get("sample_id") or ""})
     return {"status": "complete", "layouts": exports}

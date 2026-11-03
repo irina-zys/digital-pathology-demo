@@ -137,7 +137,12 @@ def _clam_class():
     vendor = Path(__file__).resolve().parents[1] / "third_party" / "CLAM"
     if str(vendor) not in sys.path:
         sys.path.insert(0, str(vendor))
-    module = importlib.import_module("wsi_core.WholeSlideImage")
+    image_pixel_limit = Image.MAX_IMAGE_PIXELS
+    try:
+        module = importlib.import_module("wsi_core.WholeSlideImage")
+    finally:
+        # Upstream changes Pillow's process-wide limit at import; keep our caller's policy.
+        Image.MAX_IMAGE_PIXELS = image_pixel_limit
     if not Path(module.__file__).resolve().is_relative_to(vendor):
         raise ImportError("A different wsi_core package is loaded; use a fresh project kernel")
     return module.WholeSlideImage

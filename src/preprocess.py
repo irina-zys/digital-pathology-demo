@@ -3,9 +3,11 @@
 import csv
 import hashlib
 import importlib.metadata
+import io
 import json
 import logging
 import re
+import subprocess
 import time
 from pathlib import Path
 
@@ -25,9 +27,35 @@ from src.report import write_report
 from src.pipeline import preprocess_masks
 
 LOG = logging.getLogger(__name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def code_provenance():
+    files = ("preprocess", "export", "tiling", "pipeline", "masking", "quality", "filters",
+             "inspection", "image_utils", "report")
+    hashes = {f"src/{name}.py": hashlib.sha256((PROJECT_ROOT / "src" / f"{name}.py").read_bytes()).hexdigest()
+              for name in files}
+    try:
+        revision = subprocess.run(["git", "-C", str(PROJECT_ROOT), "rev-parse", "HEAD"],
+            check=True, capture_output=True, text=True, timeout=5).stdout.strip()
+        dirty = bool(subprocess.run(["git", "-C", str(PROJECT_ROOT), "status", "--porcelain"],
+            check=True, capture_output=True, text=True, timeout=5).stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        revision, dirty = None, None
+    return {"git_revision": revision, "worktree_dirty": dirty, "source_files_sha256": hashes}
 
 
 def run(cfg, output):
+    output = Path(output)
+    run_purpose = cfg.get("run_purpose", "demo")
+    if run_purpose not in {"demo", "validation"}:
+        raise ValueError("run_purpose must be demo or validation")
+    for name, value in (("data.max_slides", cfg.data.max_slides),
+                        ("thumbnail.max_size", cfg.thumbnail.max_size),
+                        ("thumbnail.max_read_pixels", cfg.thumbnail.max_read_pixels),
+                        ("thumbnail.max_total_read_pixels", cfg.thumbnail.max_total_read_pixels)):
+        if type(value) is not int:
+            raise ValueError(f"{name} must be an integer, not a boolean or fractional value")
     if not 32 <= cfg.thumbnail.max_size <= 4096:
         raise ValueError("thumbnail.max_size must be 32-4096")
     if not 1 <= cfg.data.max_slides <= 100:
@@ -42,24 +70,35 @@ def run(cfg, output):
         raise ValueError("warn_removed_fraction must be 0-1")
     if cfg.data.manifest and cfg.data.paths:
         raise ValueError("Use data.manifest or data.paths, not both")
+    input_manifest = None
     if cfg.data.manifest:
-        with Path(to_absolute_path(cfg.data.manifest)).open(newline="") as stream:
-            rows = list(csv.DictReader(stream))
+        manifest_path = Path(to_absolute_path(cfg.data.manifest)).resolve(strict=True)
+        if manifest_path.stat().st_size > 5_000_000:
+            raise ValueError("Input manifest exceeds the 5 MB bound")
+        manifest_bytes = manifest_path.read_bytes()
+        rows = list(csv.DictReader(io.StringIO(manifest_bytes.decode("utf-8-sig"))))
+        input_manifest = {"path": str(manifest_path), "sha256": hashlib.sha256(manifest_bytes).hexdigest()}
     else:
         rows = [{"path": str(path), "label": "unlabelled"} for path in cfg.data.paths]
-    rows = rows[:int(cfg.data.max_slides)]
+    rows = rows[:cfg.data.max_slides]
+    for row in rows:
+        for key in ("case_submitter_id", "case_id"):
+            if key in row:
+                row[key] = (row[key] or "").strip() or None
     if not rows:
         raise ValueError("No slides configured")
     pixel_slide_id = cfg.export.get("pixel_slide_id")
     if cfg.export.enabled and pixel_slide_id is not None:
         if sum(Path(row["path"]).stem == pixel_slide_id for row in rows) != 1:
             raise ValueError("export.pixel_slide_id must match exactly one configured WSI filename stem")
-    output.mkdir(parents=True, exist_ok=True)
-    # A reused run directory must not mix old and new artifacts.
-    if (output / "results").exists():
+    job_name = HydraConfig.get().job.name if HydraConfig.initialized() else "preprocess"
+    if output.is_symlink() or (output.exists() and any(
+            path.name not in {".hydra", f"{job_name}.log"} for path in output.iterdir())):
         raise FileExistsError(f"Choose a fresh hydra.run.dir: {output}")
-    if (output / "datasets").exists():
-        raise FileExistsError(f"Export directory already exists: {output / 'datasets'}")
+    output.mkdir(parents=True, exist_ok=True)
+    provenance = code_provenance()
+    with (output / "run_started.json").open("x") as stream:
+        json.dump({"run_kind": "preprocessing", "run_purpose": run_purpose}, stream)
     results = output / "results"
     results.mkdir()
     OmegaConf.save(cfg, output / "resolved_config.yaml", resolve=True)
@@ -69,6 +108,9 @@ def run(cfg, output):
         started = time.monotonic()
         path = Path(to_absolute_path(row["path"])).resolve(strict=True)
         row = {**row, "path": str(path)}
+        source_stat = path.stat()
+        patient_id_source = next((key for key in ("case_submitter_id", "case_id") if row.get(key)), None)
+        patient_id = row[patient_id_source] if patient_id_source else None
         LOG.info("Processing %s (%d/%d)", path.name, index + 1, len(rows))
         rgb, metadata = read_thumbnail(path, cfg.thumbnail.max_size, cfg.thumbnail.max_read_pixels,
                                        cfg.thumbnail.max_total_read_pixels)
@@ -104,10 +146,10 @@ def run(cfg, output):
             raise ValueError("Dataset identifier must be filesystem-safe")
         gallery = output / "overviews" / dataset
         gallery.mkdir(parents=True, exist_ok=True)
-        prefix = re.sub(r"[^A-Za-z0-9_.-]", "_", row.get("case_submitter_id", path.stem))
+        prefix = re.sub(r"[^A-Za-z0-9_.-]", "_", patient_id or path.stem)
         if row.get("stain"):
             prefix += "__" + re.sub(r"[^A-Za-z0-9_.-]", "_", row["stain"])
-        prefix += "__" + path.stem if row.get("case_submitter_id") else ""
+        prefix += "__" + path.stem if patient_id else ""
         for name, array in {"thumbnail": rgb, "mask": clean, "preprocessed": masked, "overlay": overlay,
                             "tissue_holes": segmentation_preview}.items():
             destination = gallery / f"{prefix}__{name}.png"
@@ -123,11 +165,15 @@ def run(cfg, output):
             warnings.append("No tissue retained after filtering")
         if removed_fraction is not None and removed_fraction > cfg.artifacts.warn_removed_fraction:
             warnings.append("Large final cleanup of candidate tissue: review postmask exclusion/component settings")
-        summary = {"input": str(path), "name": row.get("case_submitter_id", path.name),
-                   "label": row.get("label", "unlabelled"), "case_id": row.get("case_id"),
+        summary = {"input": str(path), "name": patient_id or path.name,
+                   "patient_id": patient_id, "patient_id_source": patient_id_source,
+                   "label": row.get("label") or "unlabelled", "case_id": row.get("case_id"),
                    "gallery": str(gallery.relative_to(output)), "gallery_prefix": prefix,
                    "site": row.get("site"), "folder": str(folder.relative_to(output)),
-                   "input_bytes": path.stat().st_size, **metadata,
+                   "input_bytes": source_stat.st_size, "input_mtime_ns": source_stat.st_mtime_ns, **metadata,
+                   "declared_checksums": {key: row[key] for key in
+                       ("md5sum", "sha256", "source_checksum", "source_checksum_type") if row.get(key)},
+                   "source_checksum_verified": False,
                    "thumbnail_sha256": hashlib.sha256((folder / "thumbnail.png").read_bytes()).hexdigest(),
                    "tissue_pixels": count, "retained_pixels": int(clean.sum()),
                    "removed_pixels": int(removed.sum()), "removed_tissue_fraction": removed_fraction,
@@ -136,7 +182,7 @@ def run(cfg, output):
                    "hole_visualization": "retained_tissue_green_hole_blue_contours_4_connected_thumbnail",
                    "preprocessing": preprocessing["metadata"], "preprocessing_stages": stage_files,
                    "warnings": warnings, "elapsed_seconds": round(time.monotonic() - started, 3)}
-        for key in ("project", "file_name", "stain", "sample_id", "sample_id_source",
+        for key in ("project", "file_name", "case_submitter_id", "stain", "sample_id", "sample_id_source",
                     "enrollment_category", "primary_adjudicated_category", "file_id", "age_binned", "sex"):
             if row.get(key):
                 summary[key] = row[key]
@@ -145,6 +191,10 @@ def run(cfg, output):
 
             summary["exports"] = export_slide(output, row, metadata, rgb, clean, segmentation_preview,
                                                cfg.export, cfg.masking.method)
+        final_stat = path.stat()
+        if (source_stat.st_size, source_stat.st_mtime_ns) != (final_stat.st_size, final_stat.st_mtime_ns):
+            raise RuntimeError("Source file changed during preprocessing")
+        summary["source_size_mtime_unchanged"] = True
         summary["elapsed_seconds"] = round(time.monotonic() - started, 3)
         (folder / "metadata.json").write_text(json.dumps(summary, indent=2) + "\n")
         summaries.append(summary)
@@ -152,7 +202,9 @@ def run(cfg, output):
             LOG.warning("%s: %s", path.name, warning)
     versions = {name: importlib.metadata.version(name) for name in ("tiatoolbox", "hydra-core", "numpy", "pillow", "opencv-python", "h5py")}
     write_report(output, summaries, cfg.masking.method)
-    (output / "manifest.json").write_text(json.dumps({"status": "complete", "versions": versions,
+    (output / "manifest.json").write_text(json.dumps({"status": "complete", "schema_version": 1,
+        "run_kind": "preprocessing", "run_purpose": run_purpose, "versions": versions,
+        "input_manifest": input_manifest, "code": provenance,
         "mask_method": cfg.masking.method, "slides": summaries}, indent=2) + "\n")
     LOG.info("Report: %s", output / "index.html")
     return summaries

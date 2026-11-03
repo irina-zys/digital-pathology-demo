@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -11,7 +12,7 @@ import streamlit as st
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent
-OUTPUTS = ROOT / "outputs"
+OUTPUTS = Path(os.environ.get("DIGITAL_PATHOLOGY_OUTPUTS", ROOT / "outputs")).expanduser().resolve()
 PREVIEWS = {"Original": "thumbnail.png", "Retained mask": "clean_mask.png",
             "Filtered": "filtered.png", "Overlay": "overlay.png"}
 OPTIONAL_PREVIEWS = {"Tissue + holes": "tissue_holes.png"}
@@ -109,7 +110,15 @@ def load_run(manifest_text, modified_ns):
                 region_layout.get("exported_count") if region_layout.get("region_tar") else (0 if region_layout else None))
         dataset = slide.get("project") or Path(slide.get("gallery", "Unknown")).name
         prefilter_excluded = (slide.get("preprocessing") or {}).get("prefilter_excluded_fraction")
-        rows.append({"_index": index, "dataset": dataset, "patient": slide.get("name") or "Unknown",
+        patient_id = next((value.strip() for key in ("patient_id", "case_submitter_id", "case_id")
+                           if isinstance(value := slide.get(key), str) and value.strip()), None)
+        patient = patient_id or "Unknown"
+        # Legacy manifests used name for submitter IDs, but also for anonymous filenames.
+        if (patient_id and "patient_id" not in slide and slide.get("name")
+                and slide["name"] not in {Path(slide["input"]).name, Path(slide["input"]).stem}):
+            patient = slide["name"]
+        rows.append({"_index": index, "dataset": dataset, "patient": patient,
+            "patient_id": patient_id,
             "slide_id": Path(slide["input"]).stem, "stain": slide.get("stain") or "Unknown",
             "label": slide.get("label") or "Unknown", "sample_id": slide.get("sample_id") or "Unknown",
             "sample_id_source": slide.get("sample_id_source") or "Unknown",
@@ -133,12 +142,20 @@ def load_run(manifest_text, modified_ns):
 
 
 @st.cache_data(max_entries=100, show_spinner=False)
-def is_slide_run(path_text, modified_ns):
+def is_slide_run(path_text, modified_ns, include_validation=True):
     path = Path(path_text)
     try:
         if path.stat().st_size > 5_000_000:
             return False
         manifest = json.loads(path.read_text())
+        if manifest.get("run_kind", "preprocessing") != "preprocessing":
+            return False
+        if not include_validation:
+            purpose = manifest.get("run_purpose")
+            legacy_validation = purpose is None and any(
+                part.startswith(("validation", "verification", "review")) for part in path.relative_to(OUTPUTS).parts)
+            if purpose == "validation" or legacy_validation:
+                return False
         slides = manifest.get("slides")
         if manifest.get("status") != "complete" or not isinstance(slides, list) or not 1 <= len(slides) <= 100:
             return False
@@ -162,9 +179,7 @@ def discover_runs(include_validation):
                 continue
             if "archive" in path.relative_to(OUTPUTS).parts:
                 continue
-            if not include_validation and any(part.startswith("validation") for part in path.relative_to(OUTPUTS).parts):
-                continue
-            if is_slide_run(str(path), path.stat().st_mtime_ns):
+            if is_slide_run(str(path), path.stat().st_mtime_ns, include_validation):
                 paths.append(path)
     preferred = {"tcga-mpp05": 0, "kpmp-ckd-demo": 1, "kpmp-demo": 2, "tcga-full-coverage": 3, "tcga-demo": 4}
     return sorted(paths, key=lambda p: (preferred.get(p.parent.name, 5), str(p)))
@@ -220,7 +235,9 @@ def main():
         st.caption("Previews use existing small images. Full-resolution navigation remains available in QuPath. Unknown means the run did not record that metadata.")
     a, b, c = st.columns(3)
     a.metric("Slides shown", len(table))
-    b.metric("Patients shown", table["patient"].nunique())
+    known_patients = table.loc[table["patient_id"].notna(), ["dataset", "patient_id"]]
+    patient_count = len(known_patients.drop_duplicates()) if len(known_patients) or table.empty else "Unknown"
+    b.metric("Known patients shown", patient_count)
     known_stains = table.loc[table["stain"] != "Unknown", "stain"]
     stain_count = known_stains.nunique() if len(known_stains) or table.empty else "Unknown"
     c.metric("Stains shown", stain_count)
@@ -241,7 +258,7 @@ def main():
     display.insert(0, "preview", previews)
     configuration = {
         "preview": st.column_config.ImageColumn("Thumbnail", width="large"),
-        "patient": "Patient", "stain": "Stain", "label": "Label", "dataset": "Dataset",
+        "patient": "Patient", "patient_id": "Patient ID", "stain": "Stain", "label": "Label", "dataset": "Dataset",
         "slide_id": "Slide ID", "sample_id": "Sample ID", "sample_id_source": "Sample ID source",
         "case_id": "Case ID", "file_id": "Public file ID", "original_filename": "Original filename",
         "objective_power": "Scanner objective (×)", "mpp_x": "Native MPP X (µm/px)", "mpp_y": "Native MPP Y (µm/px)",
