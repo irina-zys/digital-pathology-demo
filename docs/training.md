@@ -148,6 +148,62 @@ and uses the best checkpoint, not arbitrary final weights. During model selectio
 leave the test set untouched. Accuracy is micro accuracy across images or bags;
 neither patch metrics nor bag metrics automatically become patient-level metrics.
 
+## WSI classification notebook
+
+[WSI classification demo](../notebooks/wsi_classification_demo.ipynb) uses the ten
+local TCGA-LUAD/LUSC slides, with six training patients, two validation patients
+and two held-out patients. Each split contains both classes. This is a fixed,
+seeded teaching split, not an official TCGA benchmark or a performance estimate.
+
+The `data=wsi` profile selects `src.data.wsi.WSIBagDataModule`. Its CSV requires
+`wsi_path,coords_path,split,group_id,label,bag_id`, with paths relative to
+`data.data_root`. It validates patient separation, slide identity, HDF5 geometry,
+calibration and file-change guards. It reads eight evenly indexed tissue
+coordinates per slide directly through OpenSlide; no patch PNGs or WSI copies
+are written. Each native footprint becomes a 256-pixel tile at target 0.5 µm/pixel,
+then the explicit DINO transform resizes it to 224 pixels. The exact coordinates,
+recorded tissue fractions, effective MPP and source metadata are saved.
+
+The default local input is `outputs/tcga-mpp05/manifest.json`, a historical
+`clam_saturation`/CLAM-style export. The notebook records its actual schema and
+masking/tiling methods. It does not claim those slides were rerun through the
+newer default pipeline. With downloaded TCGA slides, a fresh preprocessing run
+can instead be created using:
+
+```sh
+uv run --locked python -m src.preprocess data=tcga \
+  export.pixel_slide_id=null hydra.run.dir=outputs/tcga-classification-preprocessing
+```
+
+Set the notebook's preprocessing-run path to that directory. Require complete
+eligible 256-pixel coordinate exports at the configured MPP; capped previews,
+missing files and mismatched calibration are rejected.
+
+Use the main environment with the `train` extra. The notebook verifies a local
+DINO checkpoint and runs Hugging Face offline. Its canonical cache is
+`data/models/huggingface/`. On a new checkout, acquire the public weights explicitly
+before running the notebook:
+
+```sh
+HF_HOME="$PWD/data/models/huggingface" uv run --locked --extra train python -c \
+  'from huggingface_hub import hf_hub_download; hf_hub_download("timm/vit_small_patch16_224.dino", "model.safetensors", revision="main")'
+```
+
+The notebook checks revision `10e440b8a34dfd657a90f2fcaa988c6b6a2f0da4` and
+SHA-256 `8d4795b8e4e327c6d841e15a2e3e6d88c45346256a43f8cdae8c26d92c806f7a`.
+If the provider changes the branch, review the checkpoint rather than bypassing
+those checks. DINO here is the ImageNet encoder, not a pathology foundation model.
+
+The notebook composes the existing Hydra training profile, calls `src.train.run`,
+trains only the attention/classification head for one epoch on CPU, and evaluates
+the best validation checkpoint on the two held-out slides. It saves thumbnail
+sampling overlays, slide probabilities, a confusion table, metrics, one checkpoint
+and provenance in a fresh `outputs/wsi_classification_demo/<run>/` folder. It does
+not use the test set to select the checkpoint or tune settings. Eight selected
+patches do not represent all tissue; attention weights are not validated tissue
+localization. Declared whole-WSI checksums are retained but not recomputed by this
+bounded notebook.
+
 ## Bounded check on locally prepared NuInsSeg
 
 This helper reads the existing local `data/nuinsseg/index.csv` and selects 16 real
