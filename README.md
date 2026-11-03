@@ -11,7 +11,7 @@ Run from the repository root with [uv](https://docs.astral.sh/uv/) installed:
 ```sh
 uv sync --locked
 uv run --locked python scripts/download_examples.py
-uv run --locked python -m src.preprocess hydra.run.dir=outputs/quickstart
+uv run --locked python -m src.wsi_preprocessing.preprocess hydra.run.dir=outputs/quickstart
 uv run --locked python scripts/verify_run.py outputs/quickstart
 ```
 
@@ -23,7 +23,7 @@ No classifier, model weights or training job is started by preprocessing.
 To inspect configuration without reading slides:
 
 ```sh
-uv run --locked python -m src.preprocess --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --cfg job --resolve
 ```
 
 ## Why uv?
@@ -51,6 +51,15 @@ metadata can be downloaded as CSV. The server binds to localhost; telemetry is o
 Each CLI preprocessing run also contains one `index.html` report and flat `overviews/<dataset>/`
 folders for Finder Gallery or Quick Look. Use [QuPath](docs/datasets.md#qupath)
 for navigation through the original WSI at higher resolution.
+
+## Custom settings are normally required
+
+Preprocessing normally needs settings tailored to the dataset, stain, tissue
+morphology, scanner resolution and downstream analysis. The supplied H&E, lung
+and KPMP presets are starting points; selecting an input roster does not tune the
+pipeline. Review representative original images, intermediate masks, tissue/hole
+contours and patch coverage before applying a recipe to a cohort. Record the
+chosen Hydra settings with the run. See [customizing preprocessing](docs/preprocessing.md#customize-settings-for-each-dataset).
 
 ## What the default does
 
@@ -97,6 +106,16 @@ The preprocessing notebook uses the same reusable Python functions as the CLI. I
 stain comparison pairs original-background processing with one shared estimated
 background colour. Normalization is **off in the default WSI pipeline**; its
 assumptions and API are documented in the [guide](docs/preprocessing.md#optional-stain-normalization).
+
+## Training and evaluation code
+
+The [structure guide](docs/hydra-and-project-structure.md#data-and-model-ownership)
+separates plain models, Lightning task adapters, training execution, runners and
+shared evaluation metrics. Training/evaluation runs use `python -m src.runners.train`;
+add `--config-name eval` for checkpoint evaluation. The [training guide](docs/training.md)
+describes manifests, Hydra component targets and checkpoint version 2.
+Old source imports and historical training checkpoints require migration; existing
+pretrained weights and feature-cache formats are preserved.
 
 ## Scope and sharing
 

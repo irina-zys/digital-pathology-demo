@@ -16,7 +16,7 @@ when repeating preprocessing.
 
 ```sh
 uv run --locked python scripts/download_examples.py
-uv run --locked python -m src.preprocess hydra.run.dir=outputs/small-demo
+uv run --locked python -m src.wsi_preprocessing.preprocess hydra.run.dir=outputs/small-demo
 ```
 
 The first command downloads the small public Aperio reader example and legacy
@@ -65,7 +65,7 @@ of histological diversity; site can also confound classification.
 
 ```sh
 uv run --locked python scripts/download_tcga.py
-uv run --locked python -m src.preprocess --config-name lung \
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name lung \
   export.pixel_slide_id=20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b \
   hydra.run.dir=outputs/tcga-lung
 uv run --locked python scripts/verify_run.py outputs/tcga-lung --check-regions
@@ -113,7 +113,7 @@ filters. These separate slides are not spatially registered channels.
 
 ```sh
 uv run --locked python scripts/download_kpmp.py
-uv run --locked python -m src.preprocess --config-name kpmp \
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name kpmp \
   hydra.run.dir=outputs/kpmp-ckd-demo
 uv run --locked python scripts/verify_run.py outputs/kpmp-ckd-demo
 ```

@@ -30,7 +30,9 @@ installs packages or starts an unrestricted download.
 
 Checkpoints live only under the repository's ignored `data/models/` directory.
 The explicit downloader verifies/reuses matching files, bounds downloads, records
-provenance and refuses mismatched existing files. Loaders never download weights.
+provenance and refuses mismatched existing files. Weight pins are owned by
+`src/models/pretrained/assets.py` and shared by preparation and inference. The
+notebook inference paths require prepared local weights; acquisition is explicit.
 
 | Model | Local checkpoint | Purpose and input contract |
 | --- | --- | --- |
@@ -62,16 +64,23 @@ the project weight-cache path.
 The older single-patch `load_uni` / `embed_uni` API remains available for an
 explicit authorized checkpoint at `data/models/uni/pytorch_model.bin`, prepared by
 `scripts/download_pretrained.py --model uni`. The WSI comparison uses the TIMM
-loader in `src.models.pretrained_encoders` and does not require that duplicate.
+weight loader in `src.models.encoders.pretrained`, composed with the matched
+transform by `src.inference.feature_extraction.load_comparison_encoder`, and does
+not require that duplicate. The weight-only loader returns no transform.
+Single-patch UNI retains its square-image resize policy; the comparison explicitly
+resizes every full tile to 224 × 224 before per-patch L2 normalization.
 
 ## Reusable functions
 
-The main-environment API is `src.pretrained`; model-specific implementations are
-`src.hovernext` and the isolated `src.cellpose_worker`. For example:
+Model-specific APIs live in `src.models.pretrained`: `uni`, `hovernext`, and
+`cellpose`. The Cellpose adapter launches `src.models.pretrained.cellpose_worker`
+in its isolated environment. Loading an adapter never prepares model assets.
+For example:
 
 ```python
 import torch
-from src.pretrained import load_hovernext, predict_hovernext, run_cellpose_patch
+from src.models.pretrained.hovernext import load_hovernext, predict_hovernext
+from src.models.pretrained.cellpose import run_cellpose_patch
 
 torch.set_num_threads(1)
 model = load_hovernext("data/models/hovernext/pannuke_convnextv2_tiny_1", device="cpu")
@@ -121,7 +130,7 @@ isolated environment, `load_cellpose(checkpoint, checkpoint_sha256)` and
 `src.segmentation_demo` owns preflight, bounded patch preparation, immutable
 prediction attempts, plotting and the conversion/provenance appendix. The
 notebook keeps parameters, teaching questions, calls and interpretation visible.
-`src.metrics.compare_instances` is a pure, reusable instance matcher;
+`src.evaluation.metrics.compare_instances` is a pure, reusable instance matcher;
 `comparison_row` supplies consistently scoped table values.
 
 Preflight verifies both local model environments and checkpoint hashes, checks
@@ -152,7 +161,7 @@ rejection but can also retain false positives. For overlapping windows, merge or
 deduplicate corresponding instances in common slide coordinates before final
 size filtering/counting. Overlap alone does not resolve duplicates or missing
 context. The notebook explains this policy; it does not implement WSI stitching.
-See [the reusable instance filter](../src/postprocessing.py).
+See [the reusable instance filter](../src/imaging_utils/postprocessing.py).
 
 Each `run_prediction` call creates a fresh directory under the run's `attempts/`,
 including when a cell is re-executed. Each annotation-export execution creates a fresh
@@ -228,21 +237,23 @@ verified scale; the current two-patch run does not provide them.
 
 ### Generic metric API
 
-- `src.metrics.segmentation.compare_instances`: bounded one-to-one mask matching,
+- `src.evaluation.metrics.segmentation.compare_instances`: bounded one-to-one mask matching,
   ignored regions, edge IDs, Dice, matched-object IoU, TP/FP/FN and detection rates.
-- `src.metrics.detection.detection_metrics`: count-based precision, recall, FNR,
+- `src.evaluation.metrics.detection.detection_metrics`: count-based precision, recall, FNR,
   FDR, F1, count error/bias and FP per patch. Conventional FPR requires explicit
   TN; FP/mm² requires positive evaluated area with `area_verified=True`.
-- `src.metrics.detection.aggregate_detection_metrics`: one report per unique
+- `src.evaluation.metrics.detection.aggregate_detection_metrics`: one report per unique
   patch for one model/policy; pooled rates, patch count MAE, macro-patch summaries
   and optional group-balanced summaries from explicit known group IDs. Undefined
   rates remain unavailable with contributing-unit counts; partial TN/area coverage
   does not silently shrink pooled denominators. No sampling, weighted-population
   inference or bootstrap confidence intervals are implemented by these helpers.
 
-All functions are exported through `src.metrics`; `src.segmentation` retains thin
-compatibility imports. No model environment, annotation format, notebook state or
-filesystem access is needed to compute metrics.
+All functions are exported through `src.evaluation.metrics`; the obsolete
+`src.segmentation` compatibility module has been removed. No model environment,
+annotation format, notebook state or filesystem access is needed to compute the
+instance/detection metrics. The training Dice class is imported explicitly from
+`src.evaluation.metrics.foreground`.
 
 ## Frozen-encoder WSI comparison
 

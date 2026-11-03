@@ -1,6 +1,6 @@
 # Source attribution
 
-`src/filters.py` adapts code from CODAIT/deep-histopath revision
+`src/imaging_utils/filters.py` adapts code from CODAIT/deep-histopath revision
 `c8baf8d47b6c08c0f6c7b1fb6d5dd6b77e711c33` (Apache-2.0):
 
 - [wsi/filter.py](https://github.com/CODAIT/deep-histopath/blob/c8baf8d47b6c08c0f6c7b1fb6d5dd6b77e711c33/deephistopath/wsi/filter.py):
@@ -42,16 +42,17 @@ in `uv.lock`. Its own distribution retains its licensing information.
 - the original `LICENSE.md` (GPLv3), plus our `SOURCE.json` with revision and SHA-256 hashes.
 
 The upstream files are unmodified. No model/training code or weights are included.
-`src/tiling.py` calls upstream `WholeSlideImage.process_contour` and reads pixels
+`src/wsi_preprocessing/tiling.py` calls upstream `WholeSlideImage.process_contour` and reads pixels
 through its OpenSlide handle. The adapter supplies contours from the reviewed
 final mask, bounds work, disables padding, deduplicates coordinates and applies
-extra mask-coverage QC. Upstream segmentation is not called: the combined
-CODAIT/TIA/CLAM-style raster pipeline and bounded small-hole policy are local code.
-The older independent `src/clam_tiling.py` helper remains available to existing
-callers but is not the default backend. Existing installed packages satisfy the
-vendored subset; no Python package dependencies were added.
+extra mask-coverage QC. The default export does not call upstream segmentation:
+the combined CODAIT/TIA/CLAM-style raster pipeline and bounded small-hole policy
+are local code. The notebook separately calls native CLAM segmentation for its
+explicit artefact comparison. The unused independent CLAM tiler was removed.
+Existing installed packages satisfy the vendored subset's imports; no dependencies
+were added.
 
-TIAToolbox supplies the normalisation implementations; `src/normalization.py`
+TIAToolbox supplies the normalisation implementations; `src/imaging_utils/normalization.py`
 offers unmasked or contour-based constant backgrounds for Reinhard, Macenko, Ruifrok
 and Vahadane, restoring the supplied background colour after transformation only for the masked path.
 It does not alter TIA's statistical estimators. CODAIT normalisation code was not
@@ -63,7 +64,7 @@ copied. Keep the GPLv3 licence and source notices when redistributing this subse
 [digitalpathologybern/hover_next_inference](https://github.com/digitalpathologybern/hover_next_inference/tree/bde3c9d96172d16513e292d0a2dfcd7ff80202ff).
 `SOURCE.json` records upstream/local hashes and the narrow adaptation: selected
 array postprocessing functions use NumPy storage in place of a Zarr array.
-Architecture and class constants are unchanged. The adapter in `src/hovernext.py`
+Architecture and class constants are unchanged. The adapter in `src/models/pretrained/hovernext.py`
 loads the verified PanNuke Tiny fold-1 checkpoint and official thresholds, then
 performs one direct 256-pixel inference without WSI tiling or test-time augmentation.
 

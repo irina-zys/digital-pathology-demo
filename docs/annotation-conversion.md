@@ -24,10 +24,10 @@ under `data/nuinsseg/extracted/`; adjust the input paths for your local extracti
 
 ## Python components
 
-The reusable implementation lives in `src/annotations.py`; `scripts/convert_annotations.py` only parses command-line arguments and calls it. Application code and notebooks can import the same workflow directly, without importing a CLI or changing `sys.argv`:
+The reusable implementation lives in `src/data/annotations.py`; `scripts/convert_annotations.py` only parses command-line arguments and calls it. Application code and notebooks can import the same workflow directly, without importing a CLI or changing `sys.argv`:
 
 ```python
-from src.annotations import convert_annotations
+from src.data.annotations import convert_annotations
 
 manifest = convert_annotations(
     "data/nuinsseg/extracted",

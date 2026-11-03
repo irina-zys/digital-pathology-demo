@@ -7,12 +7,17 @@ configuration in `configs/`, reusable functions in `src/`, and operational
 commands in `scripts/` lets the CLI and notebook share the same processing code.
 This directory separation is a project convention, not a Hydra requirement.
 
+Preprocessing normally requires dataset- and stain-specific configuration.
+Hydra composes the choices you supply; it does not infer appropriate thresholds,
+physical scale or tissue-selection rules from the images. Review the supplied
+presets on representative inputs and follow the [customization guide](preprocessing.md#customize-settings-for-each-dataset).
+
 ## What happens when you run preprocessing
 
 From the repository root:
 
 ```sh
-uv run --locked python -m src.preprocess data=tcga data.max_slides=1
+uv run --locked python -m src.wsi_preprocessing.preprocess data=tcga data.max_slides=1
 ```
 
 The command has four parts:
@@ -20,14 +25,14 @@ The command has four parts:
 | Part | Role |
 | --- | --- |
 | `uv run --locked` | Use the project environment and its existing dependency lock |
-| `python -m src.preprocess` | Run the Python module that owns the preprocessing entrypoint |
+| `python -m src.wsi_preprocessing.preprocess` | Run the Python module that owns the preprocessing entrypoint |
 | `data=tcga` | Select `configs/data/tcga.yaml` from the `data` configuration group |
 | `data.max_slides=1` | Override one value in the composed configuration |
 
-In [src/preprocess.py](../src/preprocess.py), the entrypoint is:
+In [src/wsi_preprocessing/preprocess.py](../src/wsi_preprocessing/preprocess.py), the entrypoint is:
 
 ```python
-@hydra.main(version_base="1.3", config_path="../configs", config_name="preprocess")
+@hydra.main(version_base="1.3", config_path="../../configs", config_name="preprocess")
 def main(cfg: DictConfig):
     run(cfg, Path(HydraConfig.get().runtime.output_dir))
 ```
@@ -111,7 +116,7 @@ A named experiment can replace several groups together.
 cohort and special-stain recipe:
 
 ```sh
-uv run --locked python -m src.preprocess --config-name kpmp --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name kpmp --cfg job --resolve
 ```
 
 This is why choosing the KPMP profile changes more than the list of slides.
@@ -124,10 +129,10 @@ without running preprocessing:
 
 ```sh
 # Default composed task configuration, with interpolations resolved.
-uv run --locked python -m src.preprocess --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --cfg job --resolve
 
 # One TCGA slide, smaller thumbnail, no coordinate/pixel export.
-uv run --locked python -m src.preprocess data=tcga data.max_slides=1 \
+uv run --locked python -m src.wsi_preprocessing.preprocess data=tcga data.max_slides=1 \
   thumbnail.max_size=512 export.enabled=false --cfg job --resolve
 ```
 
@@ -146,7 +151,7 @@ exports only when a slide has been selected for them.
 For a small parameter sweep:
 
 ```sh
-uv run --locked python -m src.preprocess -m data=tcga data.max_slides=1 \
+uv run --locked python -m src.wsi_preprocessing.preprocess -m data=tcga data.max_slides=1 \
   export.enabled=false thumbnail.max_size=128,256
 ```
 
@@ -200,18 +205,18 @@ settings with `--cfg job --resolve` before comparing runs across machines.
 | Location | Responsibility | Examples |
 | --- | --- | --- |
 | `configs/` | Declarative choices, thresholds and resource bounds | Dataset and masking profiles |
-| `src/` | Importable processing functions and workflow orchestration | `pipeline.py`, `tiling.py`, `normalization.py`, `annotations.py` |
+| `src/` | Importable processing functions and workflow orchestration | `wsi_preprocessing/`, `imaging_utils/`, `data/annotations.py` |
 | `scripts/` | Commands for acquisition, conversion, inspection and maintenance | Downloaders, `convert_annotations.py`, `verify_run.py` |
 | `notebooks/` | Teaching and exploration using the shared functions | WSI inspection and matched stain comparisons |
 | `app.py` | Streamlit interface for reviewing saved results | Tables, previews and metadata filters |
 
-For example, `src.annotations.convert_annotations(...)` owns annotation
+For example, `src.data.annotations.convert_annotations(...)` owns annotation
 conversion. `scripts/convert_annotations.py` parses `argparse` flags and calls
 that same function. A notebook can import it without constructing a fake command
 line or importing the CLI. Likewise, the preprocessing workflow and notebook
-both use `src.pipeline.preprocess_masks`, so a correction has one shared owner.
+both use `src.wsi_preprocessing.pipeline.preprocess_masks`, so a correction has one shared owner.
 
-The distinction is responsibility, not whether a file can run. `src.preprocess`
+The distinction is responsibility, not whether a file can run. `src.wsi_preprocessing.preprocess`
 is deliberately an executable Hydra entrypoint, and some `scripts/` files own
 substantial task-specific logic. Downloaders handle acquisition; the verifier
 independently reconstructs expected results rather than just calling the exporter
@@ -239,3 +244,68 @@ This separation makes settings reviewable, preserves the same processing logic
 across interfaces, and lets validation exercise functions through real workflows.
 Hydra records choices; it does not guarantee that those choices are scientifically
 appropriate or that two runs used identical data.
+
+
+## Data and model ownership
+
+The training packages follow CellGauge-style separation of responsibilities with
+Lightning–Hydra component injection. No registry or component execution graph is
+needed for these baseline tasks.
+
+| Package/module | Responsibility |
+| --- | --- |
+| `src/data/manifests.py`, `coordinates.py` | Validate explicit inputs, splits and calibrated coordinate selections |
+| `src/data/datasets/` | Read samples and construct the existing tensor batches |
+| `src/data/datamodules/` | Lightning setup/loaders and explicit run provenance |
+| `src/data/transforms.py` | Image/mask geometry and named preprocessing policies |
+| `src/data/annotations.py`, `preparation/` | Annotation conversion and dataset acquisition |
+| `src/data/feature_cache.py` | Persisted cache identities, reads and resumable writes |
+| `src/models/encoders/`, `pooling/`, `networks/` | Reusable PyTorch computation |
+| `src/models/losses/` | Standalone objectives, independent of Lightning |
+| `src/lightning/` | Task steps, metric updates/logging, optimization and checkpoint hooks |
+| `src/training/` | Trainer execution, callbacks and reusable training recipes |
+| `src/runners/` | Run configuration, input/output coordination and completion records |
+| `src/models/loading.py`, `checkpoints.py` | Construction/restoration and checkpoint version checks |
+| `src/models/pretrained/` | Verified pretrained adapters and explicit asset preparation |
+| `src/inference/feature_extraction.py` | Encoder inference over selected WSI coordinates |
+| `src/imaging_utils/` | Array/image operations, masks, stains and quality filters |
+| `src/wsi_preprocessing/` | Slide inspection, tiling, export and full preprocessing entrypoint |
+| `src/evaluation/metrics/` | Shared foreground Dice, instance matching, detection rates and aggregation |
+| `src/utils/files.py` | Dependency-light file checksums |
+
+Datamodules reuse manifest and coordinate functions directly; none constructs a
+second datamodule. The runner requests `data.provenance()` rather than inspecting
+dataset internals. Training recipes and interpretation retain their existing
+owners. General image, mask, filtering, quality, stain-normalization and instance-cleanup
+operations live in `src/imaging_utils/`. Slide inspection, tiling, CLAM integration,
+export, reporting and the complete executable preprocessing workflow live in
+`src/wsi_preprocessing/`. Notebook presentation remains separate.
+
+There are no root forwarding entrypoints. Run preprocessing with
+`python -m src.wsi_preprocessing.preprocess`; run evaluation with
+`python -m src.runners.train --config-name eval`. The latter selects `stage: test` in the
+same substantive training/evaluation runner.
+
+See [training component configuration](training.md#modular-components-and-the-api-break)
+for the new Hydra keys and the intentional checkpoint/API break.
+
+
+## Runner and training lifecycle
+
+Following CellGauge's ownership split, `src/runners/train.py` coordinates inputs,
+configuration, construction, provenance and completion records.
+`src/training/lightning_runtime.py` constructs the Trainer and executes fit/test,
+checking interruption, optimizer updates and checkpoint availability before a run
+can be published as complete. Training callbacks and notebook recipe composition
+remain in `src/training/`; networks and objectives stay in `src/models/`.
+Lightning task adapters live in the parallel `src/lightning/` package. Metric
+definitions live in `src/evaluation/metrics/` so training and held-out evaluation
+reuse the same calculations. Monitoring policy (which score selects a checkpoint
+or stops training) belongs to training configuration and callbacks.
+
+The substantive runner is directly executable as `python -m src.runners.train`.
+Evaluation uses that same runner with `--config-name eval`. There are no root
+`src/train.py`, `src/eval.py` or preprocessing forwarding modules. This adopts
+CellGauge's separation of responsibilities without its larger scheduling or registry
+system. CellGauge itself keeps task wrappers under `models/lightning`; this project
+uses a standalone package to keep the model-computation boundary explicit.

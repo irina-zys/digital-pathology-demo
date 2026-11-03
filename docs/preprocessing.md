@@ -34,6 +34,32 @@ and the combined recipe side by side. QC is shown on slide thumbnails: original,
 sampled coverage decisions marked at their slide locations. Stain figures retain
 patch close-ups, with patch identity fixed across treatments and methods.
 
+## Customize settings for each dataset
+
+**Custom preprocessing settings are normally required.** The provided recipes
+illustrate explicit choices; they do not automatically adapt to a new collection
+or establish suitable tissue segmentation. Tailor settings to the stain, tissue
+architecture, scanner/native MPP, artefacts and intended downstream model.
+
+- Choose the masking method and colour/artefact rules for the actual stain.
+  H&E pen or colour thresholds may remove genuine structures in special stains.
+- Review component removal, hole filling and smoothing against tissue morphology.
+  These thresholds use thumbnail pixels: changing `thumbnail.max_size` also
+  changes their effective physical scale. An anatomical lumen is not an artefact.
+- Set `export.target_mpp`, patch size and tissue-coverage/placement rules to match
+  the downstream task. A valid coordinate export does not establish adequate
+  sampling or disease-relevant tissue coverage.
+- Start with a bounded set of representative slides, including difficult cases.
+  Inspect original RGB, intermediate masks, exclusions, tissue/hole contours and
+  coverage; inspect source-resolution patches where thumbnail review is unclear.
+  Adjust the recipe before scaling to the cohort.
+
+Store repeatable cohort/stain recipes in `configs/` and inspect the composed
+settings with `--cfg job --resolve`. `data=tcga` changes the input roster only;
+`--config-name lung` also selects the explicit lung settings. Keep each reviewed
+configuration and output in a fresh run directory. Validation scripts check
+mechanics and artifact consistency; they do not approve the scientific settings.
+
 ## Lung tissue: anatomy and artefacts need separate decisions
 
 Alveolar air spaces and the thin tissue between them are normal lung architecture
@@ -75,8 +101,8 @@ area units are thumbnail pixels, not fixed physical sizes. These are scientific
 starting settings, not validated lung segmentation or a universal recipe.
 
 ```sh
-uv run --locked python -m src.preprocess --config-name lung --cfg job --resolve
-uv run --locked python -m src.preprocess --config-name lung \
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name lung --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name lung \
   hydra.run.dir=outputs/tcga-lung
 ```
 
@@ -95,18 +121,18 @@ component and tiling settings above. `--config-name kpmp` replaces the data,
 masking and artefact groups for special stains. Preview the effective configuration before processing:
 
 ```sh
-uv run --locked python -m src.preprocess --config-name lung --cfg job --resolve
-uv run --locked python -m src.preprocess --config-name kpmp --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name lung --cfg job --resolve
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name kpmp --cfg job --resolve
 
 # A custom slide, smaller overview, no coordinate or pixel exports.
-uv run --locked python -m src.preprocess \
+uv run --locked python -m src.wsi_preprocessing.preprocess \
   'data.paths=[/path/to/slide.svs]' thumbnail.max_size=512 export.enabled=false
 
 # Alternative single-mask recipes.
-uv run --locked python -m src.preprocess masking=clam_saturation
-uv run --locked python -m src.preprocess masking=tia_otsu
-uv run --locked python -m src.preprocess masking=tia_morphological
-uv run --locked python -m src.preprocess masking=codait_od
+uv run --locked python -m src.wsi_preprocessing.preprocess masking=clam_saturation
+uv run --locked python -m src.wsi_preprocessing.preprocess masking=tia_otsu
+uv run --locked python -m src.wsi_preprocessing.preprocess masking=tia_morphological
+uv run --locked python -m src.wsi_preprocessing.preprocess masking=codait_od
 ```
 
 TIA morphology kernel and region sizes also require integer values. Selecting
@@ -145,7 +171,7 @@ never counts filenames or unknown values as patients.
 A Hydra sweep creates separate numbered job directories. Bounds apply per job:
 
 ```sh
-uv run --locked python -m src.preprocess -m data=tcga data.max_slides=1 \
+uv run --locked python -m src.wsi_preprocessing.preprocess -m data=tcga data.max_slides=1 \
   export.enabled=false thumbnail.max_size=128,256
 ```
 
@@ -156,7 +182,7 @@ change root settings needs Hydra's `# @package _global_` header.
 
 ## Inspect metadata and bounded previews
 
-`src.inspection.read_slide_metadata(path)` uses OpenSlide to collect dimensions,
+`src.wsi_preprocessing.inspection.read_slide_metadata(path)` uses OpenSlide to collect dimensions,
 pyramid levels, downsample factors, recorded x/y MPP, objective power, vendor,
 file size, bounds, associated-image names, ICC information and raw properties.
 The notebook displays metadata before its first overview. No label/macro pixels
@@ -179,7 +205,7 @@ level to fit within 16 million pixels.
 
 ## Generic combined H&E masking
 
-`src.pipeline.preprocess_masks(rgb, masking=..., artifacts=...)` takes ordinary
+`src.wsi_preprocessing.pipeline.preprocess_masks(rgb, masking=..., artifacts=...)` takes ordinary
 mappings and returns candidate, clean and excluded masks, per-reason exclusions,
 intermediate images and applied-threshold metadata. Source RGB is unchanged.
 
@@ -234,11 +260,11 @@ anatomy. The earlier CLAM-stage `closing_size` remains a separate setting. Saved
 record its effect.
 
 ```sh
-uv run --locked python -m src.preprocess masking.max_hole_area=0 \
+uv run --locked python -m src.wsi_preprocessing.preprocess masking.max_hole_area=0 \
   masking.use_otsu=false masking.saturation_threshold=30 \
   hydra.run.dir=outputs/fixed-mask-demo
 
-uv run --locked python -m src.preprocess \
+uv run --locked python -m src.wsi_preprocessing.preprocess \
   'data.paths=[data/tcga/TCGA-LUSC/5048c79f-ed1d-4534-8da2-1a4d207b2371.svs]' \
   'artifacts.pen_thresholds={blue:[[60,100,210]]}' \
   hydra.run.dir=outputs/custom-pen-demo
@@ -255,7 +281,7 @@ and uses the separate `clam_saturation` mask recipe.
 
 ## Upstream CLAM and physical scale
 
-`src.tiling.clam_coordinates` calls upstream `WholeSlideImage.process_contour`
+`src.wsi_preprocessing.tiling.clam_coordinates` calls upstream `WholeSlideImage.process_contour`
 at commit `53e2409d4a8189c682c173382964a85f114f923c`. It converts the final mask
 to level-0 tissue/child-hole contours; it does not segment the WSI again. Each
 contour anchors its own grid. The default `four_pt` accepts at least one of four
@@ -386,13 +412,13 @@ uv run --locked python -m scripts.refresh_tissue_holes outputs/my-run
 
 | Stage | Module and entry points |
 | --- | --- |
-| Inspect/read | `src.inspection`: `read_slide_metadata`, `read_thumbnail` |
-| Tissue masks | `src.masking`: `create_tissue_mask`, `saturation_mask`, `otsu_mask` |
-| Artefact and tile QC | `src.quality`: `exclude_artifacts`, `tile_quality` |
-| Combined masking | `src.pipeline`: `preprocess_masks` |
-| Calibrate/tile/read | `src.tiling`: `calibrated_patch_size`, `clam_coordinates`, `read_tile`, `contour_tile_mask` |
-| Export/review | `src.export`, `src.report` |
-| Shared arrays | `src.image_utils`: validation, component/hole operations, `smooth_mask_edges`, background preparation, PNG output |
+| Inspect/read | `src.wsi_preprocessing.inspection`: `read_slide_metadata`, `read_thumbnail` |
+| Tissue masks | `src.imaging_utils.masking`: `create_tissue_mask`, `saturation_mask`, `otsu_mask` |
+| Artefact and tile QC | `src.imaging_utils.quality`: `exclude_artifacts`, `tile_quality` |
+| Combined masking | `src.wsi_preprocessing.pipeline`: `preprocess_masks` |
+| Calibrate/tile/read | `src.wsi_preprocessing.tiling`: `calibrated_patch_size`, `clam_coordinates`, `read_tile`, `contour_tile_mask` |
+| Export/review | `src.wsi_preprocessing.export`, `src.wsi_preprocessing.report` |
+| Shared arrays | `src.imaging_utils.arrays`: validation, component/hole operations, `smooth_mask_edges`, background preparation, PNG output |
 
 Numerical helpers take explicit arrays and parameters, preserve their inputs,
 and do not create output directories. RGB is `uint8 H×W×3`, masks are `bool H×W`,
@@ -402,10 +428,11 @@ caller-owned CLAM/OpenSlide handle, checks bounds and rejects padding/missing
 pixels before resizing. The export adapter requires square/isotropic calibration;
 the general calibration utility also supports rectangular regions.
 
-Compatibility imports in `src.preprocess`, `src.filters` and `src.export` remain
-available. Use owning modules in new code. Legacy `tissue_mask` handles single
-mask recipes; use `preprocess_masks` for the combined recipe. `src/clam_tiling.py`
-is retained for historical callers; the default routes through upstream CLAM.
+Import the owning modules listed above. `create_tissue_mask` handles individual
+masking methods; `preprocess_masks` composes the configured masking and exclusion
+stages. `tiling.clam_coordinates` calls the pinned upstream CLAM implementation.
+The unused independent CLAM implementation and the `tissue_mask` compatibility
+helper have been removed; there are no aliases for the former root modules.
 
 The notebook reads 12 real tiles by default, selected at evenly spaced indices
 from the complete eligible coordinate grid. `N_QC_PATCHES` allows 4–36; fewer
@@ -424,14 +451,14 @@ entrypoint. The notebook and other callers share these functions:
 
 | Function | Responsibility |
 | --- | --- |
-| `image_utils.mean_background_color(rgb, background_mask)` | Mean RGB over an explicit background sample; empty samples fail |
-| `image_utils.fill_background(rgb, tissue_mask, background_rgb)` | Copy RGB and replace non-tissue pixels with an explicit colour |
-| `pipeline.preprocess_masks(...)` | Build patch masks with explicitly fixed thresholds and cleanup settings |
-| `image_utils.smooth_mask_edges(...)` | Apply opening/closing to a binary mask; this notebook pads boolean edges before calling |
-| `normalization.prepare_stain_image(...)` | Validate pixel bounds and prepare original or constant-background RGB |
-| `normalization.fit_stain_normalizer(...)` | Fit a supported TIA method to a prepared reference |
-| `normalization.normalize_tile(...)` | Prepare source, transform and restore background when a mask is supplied |
-| `normalization.compare_stain_normalization(...)` | Matched original/constant-background comparisons with results and timings |
+| `src.imaging_utils.arrays.mean_background_color(rgb, background_mask)` | Mean RGB over an explicit background sample; empty samples fail |
+| `src.imaging_utils.arrays.fill_background(rgb, tissue_mask, background_rgb)` | Copy RGB and replace non-tissue pixels with an explicit colour |
+| `src.wsi_preprocessing.pipeline.preprocess_masks(...)` | Build patch masks with explicitly fixed thresholds and cleanup settings |
+| `src.imaging_utils.arrays.smooth_mask_edges(...)` | Apply opening/closing to a binary mask; this notebook pads boolean edges before calling |
+| `src.imaging_utils.normalization.prepare_stain_image(...)` | Validate pixel bounds and prepare original or constant-background RGB |
+| `src.imaging_utils.normalization.fit_stain_normalizer(...)` | Fit a supported TIA method to a prepared reference |
+| `src.imaging_utils.normalization.normalize_tile(...)` | Prepare source, transform and restore background when a mask is supplied |
+| `src.imaging_utils.normalization.compare_stain_normalization(...)` | Matched original/constant-background comparisons with results and timings |
 
 These functions accept arrays, masks and explicit parameters. They do not depend
 on notebook globals, slide IDs, plotting, filesystem output or Hydra. All original
@@ -472,8 +499,8 @@ mask. It does not use pure white or different fills for each tile.
 
 ```python
 import numpy as np
-from src.image_utils import mean_background_color
-from src.normalization import compare_stain_normalization
+from src.imaging_utils.arrays import mean_background_color
+from src.imaging_utils.normalization import compare_stain_normalization
 
 # Inputs are caller-owned RGB arrays and boolean masks.
 mean_rgb = mean_background_color(slide_rgb, background_sample_mask)
@@ -526,7 +553,7 @@ No additional packages are required.
 Use a fresh directory and a bounded subset of real slides:
 
 ```sh
-uv run --locked python -m src.preprocess --config-name lung data.max_slides=1 \
+uv run --locked python -m src.wsi_preprocessing.preprocess --config-name lung data.max_slides=1 \
   export.pixel_slide_id=20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b \
   'export.max_patches=[6]' hydra.run.dir=outputs/validation-combined-clam
 uv run --locked python scripts/verify_run.py outputs/validation-combined-clam --check-regions

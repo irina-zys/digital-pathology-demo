@@ -28,16 +28,16 @@ so synchronization retains Lightning.
 | `mil_dino_attention` | Bag classification | Frozen pretrained DINO ViT-S/16 / attention |
 | `mil_dino_learning_curve` | Bag classification | Same encoder/head; 20 measured epochs, fixed inputs |
 
-ResNet initializes randomly by default. Set `model.encoder.pretrained=true` to
-request ImageNet weights or `model.encoder.name=resnet50` to change its size.
+ResNet initializes randomly by default. Set `model.net.encoder.pretrained=true` to
+request ImageNet weights or `model.net.encoder.name=resnet50` to change its size.
 The DINO examples use timm's
 [`vit_small_patch16_224.dino`](https://huggingface.co/timm/vit_small_patch16_224.dino):
 DINO v1 trained on ImageNet-1k, not a pathology-specific encoder. Its first run
 downloads weights. These examples use 224 × 224 RGB inputs and ImageNet
 normalization; patch resizing is explicit and does not preserve physical scale.
-`model.encoder.freeze=false` fine-tunes the encoder. Frozen encoders remain in
-inference mode during training; only the classifier and attention head learn.
-Setting `pretrained=false` exercises the architecture without DINO-learned
+`model.net.encoder.freeze=false` fine-tunes the encoder. Frozen encoders remain in
+evaluation mode during training; only the classifier and attention head learn.
+Setting `model.net.encoder.pretrained=false` exercises the architecture without DINO-learned
 weights. Do not describe that as pretrained DINO performance.
 
 ## Input contract
@@ -46,7 +46,9 @@ Supply a CSV via `data.manifest` and an explicit `data.data_root`. CSV paths are
 resolved against **data_root**, not the CSV's directory. Both config paths are
 relative to the original launch directory unless absolute.
 
-All tasks require `image_path,split,group_id`. `split` is exactly `train`, `val`
+### Patch manifests
+
+The patch-image tasks require `image_path,split,group_id`. `split` is exactly `train`, `val`
 or `test`. Training requires nonempty train and val sets; evaluation requires a
 test set. No random split is inferred. Use stable participant IDs as `group_id`
 when available, keeping their slides, stains, patches and bags together.
@@ -71,8 +73,9 @@ patches/slide_C/001.png,test,participant_C,0,slide_C
 ```
 
 This is a schema illustration, not a supplied scientific dataset. Existing WSI
-coordinate HDF5s and thumbnails are not training images. Export actual patches,
-then provide their known labels and group assignments in a manifest.
+coordinate HDF5s and thumbnails are not patch-image files. For this interface,
+export actual patches and provide their known labels and group assignments. The
+WSI coordinate interface below reads patches directly from the original slides.
 
 Segmentation instead requires `mask_path`; optional `ignore_path` marks excluded
 pixels with nonzero values. Integer instance masks are read without truncating
@@ -89,25 +92,41 @@ default; batches larger than one require equal image sizes. Resizing a mask uses
 nearest-neighbor interpolation and is an explicit experimental change. Both source
 images and resized model inputs must remain within `data.max_pixels`.
 
+### WSI and cached-feature manifests
+
+WSI recipes use `wsi_path,coords_path,split,group_id,label,bag_id`. Paths resolve
+against `data.data_root`; `bag_id` must match the WSI stem. Coordinate files must
+contain complete, unpadded level-0 exports at the requested MPP. The reader verifies
+slide dimensions, calibration, coordinate identity and source size, then selects
+the configured fixed coordinate subset. The SSL recipe prepares only train/val
+pixels. Labels validate the source schema but never enter its objective.
+
+Cached-feature recipes use `cache_path,cache_sha256,eligible_patches,coordinate_sha256`
+plus `split,group_id,label,bag_id`. Configure `data.input_dim` and
+`data.encoder_sha256` from the cache metadata. Checks include complete bag coverage,
+encoder/preprocessing identity and L2-per-patch normalization. Feature bags are
+never truncated to make a short validation run faster. See
+[complete feature coverage](#encoder-assets-and-complete-feature-coverage).
+
 ## Train, evaluate and resume
 
 ```sh
 # ResNet patch classifier; replace paths and labels with your own verified cohort.
-uv run --locked --extra train python -m src.train \
+uv run --locked --extra train python -m src.runners.train \
   data.manifest=manifests/patch_splits.csv data.data_root=data/cohort \
   'class_names=[control,disease]'
 
 # MIL; select mil_mean, mil_attention, mil_dino_mean or mil_dino_attention.
-uv run --locked --extra train python -m src.train experiment=mil_attention \
+uv run --locked --extra train python -m src.runners.train experiment=mil_attention \
   data.manifest=manifests/bag_splits.csv data.data_root=data/cohort \
   'class_names=[control,disease]' data.max_patches_per_bag=64
 
 # Foreground segmentation.
-uv run --locked --extra train python -m src.train experiment=segmentation \
+uv run --locked --extra train python -m src.runners.train experiment=segmentation \
   data.manifest=manifests/nuclei_splits.csv data.data_root=data/nuinsseg
 
 # Evaluate a saved checkpoint using the same model, label and preprocessing settings.
-uv run --locked --extra train python -m src.eval experiment=mil_attention \
+uv run --locked --extra train python -m src.runners.train --config-name eval experiment=mil_attention \
   data.manifest=manifests/bag_splits.csv data.data_root=data/cohort \
   'class_names=[control,disease]' ckpt_path=/absolute/path/to/checkpoints/epoch_009.ckpt
 ```
@@ -138,7 +157,7 @@ The default is one CPU device, two Torch threads, zero loader workers, ten epoch
 and a one-hour Trainer time bound. Data/epoch/batch bounds remain configurable.
 One GPU or MPS device can be selected through `trainer.accelerator`; distributed
 execution is deliberately not supported by this small runner. For sweeps, Hydra
-`-m model.lr=0.0001,0.001` produces separate output directories.
+`-m model.optimizer.lr=0.0001,0.001` produces separate output directories.
 
 ## Run records
 
@@ -174,7 +193,7 @@ explicit teaching bounds, distinct from the full-coordinate classification run.
 No test-slide pixels enter that brief notebook. Individual patches do not acquire
 invented diagnosis annotations: supervised updates use pooled slide mini-bags.
 
-Both use the repository's `src.train.run` / `python -m src.train` entrypoint,
+Both use the repository's `src.runners.train.run` / `python -m src.runners.train` entrypoint,
 Lightning modules/data modules, callbacks, CSV logging and Hydra experiment
 composition. This follows the
 [Lightning-Hydra-Template organization](https://github.com/ashleve/lightning-hydra-template)
@@ -183,15 +202,15 @@ No second optimizer loop is implemented in notebooks.
 
 | Experiment | Model/data components | Learning behavior |
 | --- | --- | --- |
-| `mil_features` | `FeatureMILClassifier` / `FeatureBagDataModule` | Frozen cached features; all eligible patches; attention and slide head learn |
-| `simclr_wsi` | `SimCLR` / `WSIContrastiveDataModule` | Random ResNet50, paired augmented views, NT-Xent; no diagnosis loss |
-| `finetune_dino` | `Classifier` / `WSIBagDataModule` | Verified local ImageNet DINO; encoder and mean-pooled slide head learn |
+| `mil_features` | `ClassificationModule` / `FeatureBagDataModule` | Frozen cached features; all eligible patches; attention and slide head learn |
+| `simclr_wsi` | `ContrastiveModule` / `WSIContrastiveDataModule` | Random ResNet50, paired augmented views, NT-Xent; no diagnosis loss |
+| `finetune_dino` | `ClassificationModule` / `WSIBagDataModule` | Verified local ImageNet DINO; encoder and mean-pooled slide head learn |
 | `finetune_resnet50` | Same interfaces | Verified ImageNet ResNet50; encoder and slide head learn |
 | `scratch_vit`, `scratch_resnet50` | Same interfaces | Matched supervised recipes with random encoder initialization |
 | `finetune_local_ssl` | Same interfaces | Strict transfer of encoder weights from a checksum-bound local SimCLR checkpoint |
 
-The relevant owners are `src/models`, `src/data`, `configs/model`, `configs/data`
-and `configs/experiment`. `src/training/recipes.py` only composes configuration and
+The relevant owners are `src/models`, `src/lightning`, `src/data`,
+`src/evaluation/metrics`, `configs/model`, `configs/data` and `configs/experiment`. `src/training/recipes.py` only composes configuration and
 calls the shared entrypoint. `EncoderUpdateAudit` records an actual encoder
 parameter before/after fitting, so head-only training is not mislabeled fine-tuning.
 Normalization running statistics stay fixed during the short supervised mini-bag
@@ -201,11 +220,11 @@ not transferred to the supervised classifier.
 For example, using a patient-separated WSI manifest prepared by the notebook:
 
 ```sh
-uv run --locked --extra train python -m src.train experiment=simclr_wsi \
+uv run --locked --extra train python -m src.runners.train experiment=simclr_wsi \
   data.manifest=/path/to/wsi_splits.csv data.data_root=. \
   'class_names=[LUAD,LUSC]'
 
-uv run --locked --extra train python -m src.train experiment=finetune_dino \
+uv run --locked --extra train python -m src.runners.train experiment=finetune_dino \
   data.manifest=/path/to/wsi_splits.csv data.data_root=. \
   'class_names=[LUAD,LUSC]'
 ```
@@ -233,7 +252,8 @@ ImageNet normalization for this comparison; this is a declared shared transform,
 not each model's default center-crop recipe. Features are L2-normalized per patch,
 without fitting statistics on held-out slides.
 
-`src/data/feature_bags.py` streams bounded batches to resumable HDF5 caches in
+`src/inference/feature_extraction.py` binds frozen weights to the matched comparison
+transform through `load_comparison_encoder`, then streams bounded batches to resumable HDF5 caches in
 `outputs/wsi_features_v1`. Every feature row retains its coordinate and index.
 Cache reuse requires matching source metadata, coordinate hash, weights and
 preprocessing contract; partial files do not masquerade as completed bags.
@@ -280,7 +300,7 @@ split. It must not be used to report generalization or disease performance.
 uv run --locked --extra train python scripts/prepare_vision_smoke.py \
   --output outputs/vision_smoke/input.csv
 
-uv run --locked --extra train python -m src.train experiment=mil_mean \
+uv run --locked --extra train python -m src.runners.train experiment=mil_mean \
   data.manifest=outputs/vision_smoke/input.csv data.data_root=data/nuinsseg \
   'class_names=[human,mouse]' data.max_patches_per_bag=2 \
   trainer.max_epochs=1 trainer.limit_train_batches=2 \
@@ -298,19 +318,67 @@ biological validation. No artificial images or labels substitute for these runs.
 
 ## Implementation verification (2026-11-03)
 
-The original seven baseline profiles completed real CPU training (two optimizer steps), one
-validation batch and best-checkpoint test evaluation on the bounded NuInsSeg
-selection. DINO profiles loaded the published pretrained safetensors weights.
-Standalone DINO-attention and U-Net evaluations completed, and ResNet mean MIL
-resumed from step 2 to step 4 with optimizer state. Checkpoint inspection found
-finite metrics and optimizer updates only for the intended trainable parameters.
+The modular implementation was exercised with real NuInsSeg patches, TCGA WSI
+coordinate exports and complete cached feature bags. Runs used one CPU device,
+two threads, zero loader workers, two training batches and one validation/test
+batch, with a five-minute per-run bound. Native segmentation geometry and complete
+cached bags were retained. All 15 composed configurations resolved their targets.
 
-The real-entrypoint checks also rejected groups crossing splits, duplicate image
-paths, conflicting bag labels, changed class ordering, changed normalization,
-missing evaluation checkpoints and reused output directories. Ruff passed for
-the added Python code. Local logs/checkpoints are under
-`outputs/lightning_validation_20261103/`; outputs are ignored by Git. No synthetic
-image dataset was used. That baseline check covered CPU execution only; it did
-not establish full-cohort convergence, scientific split validity or biological
-accuracy. The newer learning and frozen-feature recipes have separate execution
-receipts recording their own data, device and update budgets.
+Classification, segmentation, mean/attention MIL, WSI fine-tuning, SSL, transfer
+from a newly produced SSL checkpoint, evaluation and optimizer-state resume passed.
+Additional complete-bag recipes exercised detached checkpoint restoration. One
+725-patch bag exercised DINO extraction, interrupted-cache recovery, cache reuse,
+full-bag interpretation and conditional saliency. Real-input derivatives verified
+leakage, checksum, contract/version mismatch and output-reuse rejection.
+
+The original pre-refactor baseline records under `outputs/lightning_validation_20261103/`
+are historical; their checkpoints do not satisfy version 2. Current refactor and
+follow-up audit records are described in [the audit record](repository-audit.md).
+They establish mechanics on the exercised inputs, not full-cohort convergence,
+biological accuracy, a model ranking or exact stochastic replay. Full encoder-comparison/GPU
+training and network acquisition branches were not part of this bounded audit.
+
+## Modular components and the API break
+
+Lightning task wrappers live in `src/lightning`; their `net` is a plain
+PyTorch network from `src/models/networks`. Reusable encoders and pooling live in
+sibling packages. **Losses are a standalone `src/models/losses` package**:
+`ValidPixelBCE` preserves the per-image valid-pixel reduction, and `NTXent`
+preserves the paired-view objective. Classification uses PyTorch's existing
+`CrossEntropyLoss`. All objectives are injected through `model.loss`.
+
+Hydra composes encoder, pooling, loss and optimizer groups, then recursively
+instantiates their targets. Pooling and optimizer configurations use `_partial_`
+so the network supplies the feature dimension and Lightning supplies parameters.
+For example:
+
+```sh
+uv run --locked --extra train python -m src.runners.train experiment=mil_attention \
+  data.manifest=manifests/bag_splits.csv data.data_root=data/cohort \
+  'class_names=[control,disease]' model.net.pooling.attention_dim=64 \
+  model.net.encoder.freeze=true model.optimizer.lr=0.0001
+```
+
+To change the pooling group, use
+`model/pooling@model.net.pooling=mean`. Encoder groups use
+`model/encoder@model.net.encoder=resnet50`; initialization and freezing remain
+explicit encoder settings. SSL temperature is `model.loss.temperature` and
+projection width is `model.net.projection_dim`.
+
+This refactor deliberately removes old import paths and configuration keys;
+there are no compatibility aliases. Training checkpoints use
+`pathology_checkpoint_version: 2`. Historical training checkpoints are rejected
+with an explicit retraining message. External pretrained weights and existing
+feature caches retain their formats and identities. Evaluation/resume builds
+without initialization weights, then restores the requested current-format
+checkpoint. Local SSL transfer reads only its `net.encoder.net.*` weights.
+
+Datamodules own preparation and expose `provenance()` with selected rows, split
+counts and optional coordinate selections. The runner consumes this interface
+without reaching into datasets. Datasets and manifest/coordinate utilities do
+not import Lightning or Hydra. SSL validates the source manifest and prepares
+only train/validation coordinate selections.
+
+Detached feature-MIL inference restores through `src.models.loading.restore_model`,
+which checks checkpoint version, model and data contracts before strict weight
+loading. Trainer-managed resume also restores optimizer and loop state.

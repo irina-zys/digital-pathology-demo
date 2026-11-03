@@ -1,5 +1,20 @@
 # Nuclei segmentation evaluation
 
+## Implemented metrics and ownership
+
+`src/evaluation/metrics/` owns score definitions shared by training and evaluation:
+
+- `foreground.ForegroundDice`: accumulated valid-pixel foreground Dice for Lightning segmentation.
+- `segmentation.compare_instances`: one-to-one instance matching and crop-level scores.
+- `detection`: rates from TP/FP/FN counts and aggregation over declared patches/groups.
+
+The Lightning task module updates, resets through TorchMetrics, and logs its metric
+state. Training callbacks/configuration choose early stopping and checkpoint
+monitoring. Runners coordinate execution; they do not implement score formulas.
+Foreground Dice measures binary overlap, not separation of individual nuclei.
+
+## Proposed held-out evaluation
+
 **Proposed next evaluation; not executed by this two-patch demo.** Score individual **nuclei** against annotated ground truth. Whole-cell evaluation needs whole-cell annotations and a model with that target; do not mix CytoNuke's nucleus and whole-cell categories.
 
 ### Select and freeze the sample before viewing predictions
@@ -8,13 +23,13 @@ A practical pilot is **25 annotated patches per dataset, seed 42, at most 3 patc
 
 Save a manifest containing dataset, image/crop ID, slide/patient ID when available, crop coordinates, annotation version, image/label hashes, ambiguity coverage, inclusion probability or sampling stratum, and verified pixel scale if available. Require complete nucleus annotation within the evaluation region; an unlabelled cell in a partially annotated region cannot safely be called a false positive. Record missing group metadata rather than treating patches as independent slides.
 
-Freeze model weights, channels, diameter, thresholds, minimum-area/edge policies and the matching rule on a separate development set. Keep all patches from a patient/slide in one split, check documented pretraining overlap where possible, and disclose unresolved overlap. The polarity illustration above is development evidence, not an unbiased test-set result.
+Freeze model weights, channels, diameter, thresholds, minimum-area/edge policies and the matching rule on a separate development set. Keep all patches from a patient/slide in one split, check documented pretraining overlap where possible, and disclose unresolved overlap. The [notebook polarity illustration](../notebooks/annotation_segmentation_demo.ipynb) is development evidence, not an unbiased test-set result.
 
 ### Match nuclei, then report the error types
 
 Use the same valid annotation region for both masks. Declare ambiguity and crop-edge handling before evaluation. This demo retains frame-touching nuclei without per-object text labels; for a primary analysis of intact nuclei, use a predefined interior scoring region with sufficient image/annotation context and a documented object-ownership rule. Report edge-object sensitivity separately rather than silently dropping difficult objects.
 
-Match masks one-to-one with the declared criterion, initially **IoU ≥0.5**. A matched pair is **TP**; an unmatched annotated nucleus is **FN**; an unmatched prediction is **FP**. This still uses IoU to establish correspondence, but measures detection errors at the nucleus level. Splits and merges can create extra or missed objects; inspect them separately. The existing `src.metrics.compare_instances` returns these counts and IDs for each patch.
+Match masks one-to-one with the declared criterion, initially **IoU ≥0.5**. A matched pair is **TP**; an unmatched annotated nucleus is **FN**; an unmatched prediction is **FP**. This still uses IoU to establish correspondence, but measures detection errors at the nucleus level. Splits and merges can create extra or missed objects; inspect them separately. The existing `src.evaluation.metrics.compare_instances` returns these counts and IDs for each patch.
 
 | Quantity | Definition | Interpretation |
 |---|---|---|
@@ -38,14 +53,14 @@ For paired model comparisons, use the exact same patches and bootstrap patients/
 
 Alongside detection metrics, retain foreground Dice and the distribution of **matched-object** IoU, explicitly noting that the latter excludes missed/extra objects. Audit a prespecified random sample of FP/FN, plus split/merge and boundary cases, against the RGB and annotated ground truth. If localization alone matters, predeclare a separate centroid-distance criterion in verified units; do not adjust matching after seeing test results.
 
-### Reusable helpers in `src/metrics`
+### Reusable helpers in `src/evaluation/metrics`
 
 `compare_instances` matches masks and returns all per-patch metrics above, including FNR, FDR, count error and mean matched-object IoU. `detection_metrics(tp, fp, fn)` works directly from counts; supplying `tn` enables conventional FPR, and verified evaluated area enables FP/mm².
 
 For a frozen set of predictions from **one model and one matching policy**:
 
 ```python
-from src.metrics import aggregate_detection_metrics
+from src.evaluation.metrics import aggregate_detection_metrics
 
 summary = aggregate_detection_metrics(
     patch_reports,             # one compare_instances result per selected patch

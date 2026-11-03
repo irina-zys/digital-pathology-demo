@@ -30,7 +30,7 @@ checksum. Preserve its source URL and download receipt alongside the checkpoint.
 Weights and the environment’s `.venv/` directory are excluded from Git.
 
 ```sh
-environments/cellpose/.venv/bin/python -m src.cellpose_worker \
+environments/cellpose/.venv/bin/python -m src.models.pretrained.cellpose_worker \
   data/cytonuke/extracted/images/C3L-00977-22.svsx29y31.png \
   outputs/cellpose-example \
   --checkpoint data/models/cellpose/nucleitorch_0 \
@@ -68,7 +68,7 @@ read-back, and records input/checkpoint/output hashes and actual package version
 It performs no hidden model downloads, restoration or training. Requested size
 estimation uses only the verified local assets and input image.
 
-`src.cellpose_worker.load_cellpose(checkpoint, checkpoint_sha256)` is available
+`src.models.pretrained.cellpose_worker.load_cellpose(checkpoint, checkpoint_sha256)` is available
 inside this environment; `run_cellpose(...)` owns the bounded image/file workflow.
 The main project's adapter invokes the worker using this environment's Python.
 A small successful run verifies inference mechanics, not annotation accuracy.

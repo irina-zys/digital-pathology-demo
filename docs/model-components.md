@@ -6,33 +6,37 @@ Models can share components when their tensor interfaces and learned assumptions
 match. A matching Python class name or tensor width alone is insufficient. This
 guide describes the current APIs, then distinguishes possible extensions.
 
-## What is already composable here?
+## Composable components
 
-| Component | Current implementation | Interface |
+| Component | Owner | Interface |
 | --- | --- | --- |
-| Image encoder | [`ImageEncoder`](../src/models/encoders.py) | RGB `B × 3 × H × W` → pooled features `B × D` |
-| Patch classifier | [`Classifier`](../src/models/vision.py), `pooling=None` | Encoder → linear head → `B × K` logits |
-| MIL classifier | Same class, `pooling="mean"` or `"attention"` | One image bag `1 × N × 3 × H × W` → `N × D` → pooled `1 × D` → `1 × K` logits |
-| Binary segmentation | [`UNet`](../src/models/vision.py) | RGB `B × 3 × H × W` → foreground logits `B × 1 × H × W` |
+| Image encoder | [`ImageEncoder`](../src/models/encoders/image.py) | RGB `B × 3 × H × W` → pooled features `B × D`; exposes `num_features` |
+| Patch/image-bag classifier | [`ImageClassifier`](../src/models/networks/classification.py) | Injected encoder and optional pooling factory → class logits |
+| Cached-feature MIL | [`MILHead`](../src/models/networks/classification.py) | One `1 × N × D` complete feature bag → `1 × K` logits |
+| Mean/attention pooling | [`pooling`](../src/models/pooling) | `N × D` → pooled `1 × D` and `N` normalized weights |
+| Binary segmentation | [`UNet`](../src/models/networks/unet.py) | RGB `B × 3 × H × W` → foreground logits `B × 1 × H × W` |
+| Contrastive network | [`ContrastiveNetwork`](../src/models/networks/contrastive.py) | Injected encoder → projection head |
+| Objectives | [`losses`](../src/models/losses) | Valid-pixel BCE and NT-Xent; classification uses PyTorch cross-entropy |
+| Lightning task adapters | [`lightning`](../src/lightning) | Injected `net`, `loss` and optimizer factory; task-specific steps and metrics |
 
-`B` is batch size, `N` the number of patches, `D` the encoder feature width and
-`K` the number of ordered classes. MIL currently handles one bag per batch;
-attention weights normalize across its patches. It encodes images during the
-forward pass, rather than accepting cached feature bags.
+Metric definitions are owned by [`src/evaluation/metrics`](../src/evaluation/metrics).
+Lightning updates and logs those metrics; training callbacks and configuration
+choose the monitoring and checkpoint-selection policy.
 
-`ImageEncoder` allows `resnet18`, `resnet50` and `vit_small_patch16_224.dino`.
-It exposes `num_features`; `Classifier` uses this to size its linear head.
-The constructor accepts an encoder **configuration dictionary**, not an arbitrary
-encoder object. Its new head, and optional attention network, require training.
-`pretrained=False` initializes the encoder randomly. `freeze=True` disables its
-gradients and keeps it in evaluation mode when the surrounding model trains.
+`B` is batch size, `N` patches, `D` feature width and `K` ordered classes.
+Networks, pooling and losses are plain PyTorch components. Their construction
+does not require a Trainer. Image and feature MIL share the same pooling/readout;
+`forward_with_attention` takes an unbatched feature bag on `MILHead`, and
+`forward_replaced` keeps every other embedding fixed for conditional saliency.
 
-The compact U-Net has two skip connections: shallow features at full resolution
-and deeper features at half resolution. Its decoder upsamples, concatenates the
-matching skip, then applies convolutions. Its final 1 × 1 convolution produces
-one foreground channel. It is randomly initialized and currently has no argument
-for substituting a pretrained encoder. Thresholded foreground is not an
-instance-ID map: touching nuclei may remain joined.
+`ImageEncoder` supports `resnet18`, `resnet50` and
+`vit_small_patch16_224.dino`. The network receives an encoder object and sizes its
+head from `num_features`. Frozen encoders remain in evaluation mode during
+training. Input-size requirements live with the encoder.
+
+The compact U-Net remains a two-level foreground model with two skip connections.
+It has no interchangeable pretrained segmentation encoder. Thresholded foreground
+is not an instance-ID map. Reorganizing code does not change that scientific scope.
 
 ## Reassemble pretrained HoVer-NeXt in Lightning
 
@@ -48,7 +52,7 @@ import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader
-from src.pretrained import load_hovernext
+from src.models.pretrained.hovernext import load_hovernext
 
 class ReassembledHoVer(L.LightningModule):
     def __init__(self, original):
@@ -133,10 +137,14 @@ Track this together with tissue coverage, crop coordinates and training exposure
 ## How the pretrained models fit
 
 **Original UNI** is a ViT-L/16 encoder, with no segmentation decoder or task head.
-[`load_uni` / `embed_uni`](../src/pretrained.py) use an authorized local checkpoint,
+[`load_uni` / `embed_uni`](../src/models/pretrained/uni.py) use an authorized local checkpoint,
 224-pixel RGB input and ImageNet normalization to return one 1024-value vector.
 A new linear classifier or bag-pooling head could learn from these embeddings,
-but UNI is not in `ImageEncoder`'s allowlist, and cached-UNI MIL is not implemented.
+and the complete-feature workflow already trains `MILHead` on cached UNI embeddings.
+The WSI comparison uses `src.inference.feature_extraction.load_comparison_encoder`
+to bind these weights to its explicit full-square resize policy. The lower-level
+`src.models.encoders.pretrained.load_pretrained_encoder` returns weights and
+metadata without a data transform. UNI is not in the trainable `ImageEncoder` allowlist.
 Obtaining embeddings does not train the downstream head. UNI2 is a different
 model and interface. [Official original UNI usage](https://github.com/mahmoodlab/UNI/blob/main/README_old.md).
 
@@ -149,7 +157,7 @@ are not instance labels. Replacing a branch changes the learned contract and may
 invalidate that postprocessing. The adapter expects exactly 256 × 256 RGB,
 divides by 255 and assumes the training scale of 0.25 µm/pixel; it does not verify
 PNG calibration or resample 0.5 µm/pixel WSI patches to that scale.
-[Local adapter](../src/hovernext.py) · [Pinned upstream architecture](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/multi_head_unet.py).
+[Local adapter](../src/models/pretrained/hovernext.py) · [Pinned upstream architecture](https://github.com/digitalpathologybern/hover_next_inference/blob/bde3c9d96172d16513e292d0a2dfcd7ff80202ff/src/multi_head_unet.py).
 
 **Cellpose 3 nuclei** uses a residual U-Net with style conditioning. Its output
 contains two flow components and a cell-probability score; flow dynamics and
@@ -163,12 +171,13 @@ weights; the current API exposes inference, not interchangeable training blocks.
 
 ## Lightning manages training, not architectural compatibility
 
-`Classifier` and `UNet` inherit the local `VisionModule`, which supplies optimizer,
-training/evaluation hooks and checkpoint contracts. Their PyTorch submodules and
-`forward` methods define the architecture. [`src.train`](../src/train.py) uses
-Hydra to instantiate the model and data module, then calls Lightning's trainer.
-A compatible plain `nn.Module` could be wrapped in a new Lightning task, but that
-would still require suitable targets, loss, metrics and data handling.
+`ClassificationModule`, `SegmentationModule` and `ContrastiveModule` share small
+lifecycle/checkpoint hooks in `BaseModule`. Their `net` owns computation and their
+injected `loss` owns the objective. Hydra configures these components and an
+optimizer partial; `src.runners.train` constructs them through `models/loading.py`,
+validates the data interface, and calls Lightning's trainer. Architecture code
+does not import Lightning. Classification and segmentation own their prediction
+outputs; the short SSL recipe explicitly declines prediction.
 [Official LightningModule interface](https://lightning.ai/docs/pytorch/stable/common/lightning_module.html).
 
 Keep checkpoint parameter names, dimensions and class order aligned with the
@@ -178,7 +187,10 @@ repair for incompatible shapes or semantics. A deliberately replaced head needs
 explicit initialization, training and a new checkpoint identity.
 
 Training checkpoints additionally record model/data contracts: task, labels and
-configured architecture, image size and normalization. Resume/evaluate through
+configured architecture, objective, image size and normalization. Current training
+checkpoints require contract version 2. Detached feature-MIL inference uses
+`src.models.loading.restore_model` with an explicit data contract; it does not
+restore the optimizer or training loop. Resume/evaluate through
 the [training entrypoints](training.md) so these checks apply. Loading weights
 alone does not establish compatible preprocessing, MPP, annotation semantics or
 performance on a new cohort.
