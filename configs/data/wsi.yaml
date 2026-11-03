@@ -1,0 +1,17 @@
+# Existing coordinate exports are read directly; no patch PNGs are written.
+_target_: src.data.wsi.WSIBagDataModule
+manifest: ???
+data_root: .
+task: mil
+class_names: ${class_names}
+batch_size: 1
+num_workers: 0
+image_size: 224
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+augment: false
+max_pixels: 1000000
+max_samples_per_split: null
+max_patches_per_bag: 8
+target_mpp: 0.5
+max_slides: 20

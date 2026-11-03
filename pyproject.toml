@@ -32,7 +32,7 @@ dev = [
 
 [tool.ruff]
 target-version = "py312"
-extend-exclude = ["third_party", "data", "outputs", "notebooks"]
+extend-exclude = ["third_party", "./data", "outputs", "notebooks"]
 force-exclude = true
 
 [tool.ruff.lint]
