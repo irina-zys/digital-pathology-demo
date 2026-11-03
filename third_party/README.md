@@ -52,7 +52,7 @@ callers but is not the default backend. Existing installed packages satisfy the
 vendored subset; no Python package dependencies were added.
 
 TIAToolbox supplies the normalisation implementations; `src/normalization.py`
-offers unmasked or contour-whitened backgrounds for Reinhard, Macenko, Ruifrok
-and Vahadane, restoring white after transformation only for the whitened path.
+offers unmasked or contour-based constant backgrounds for Reinhard, Macenko, Ruifrok
+and Vahadane, restoring the supplied background colour after transformation only for the masked path.
 It does not alter TIA's statistical estimators. CODAIT normalisation code was not
 copied. Keep the GPLv3 licence and source notices when redistributing this subset.

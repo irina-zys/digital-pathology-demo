@@ -1,0 +1,376 @@
+# WSI preprocessing guide
+
+[Quick start](../README.md) · [Datasets and QuPath](datasets.md) ·
+[Annotation conversion](../scripts/convert_annotations.md)
+
+Run CLI commands from the repository root. The
+[MSc notebook](../notebooks/wsi_preprocessing_msc.ipynb) provides a guided version:
+select the project's `.venv/bin/python`, restart the kernel and run all cells.
+It discovers the project from ancestor directories, with an explicit project-path
+override available when launched elsewhere. New notebook outputs go under the
+repository's ignored `outputs/msc_wsi_demo/` directory. The published notebook has
+no embedded execution output; running it creates the figures and provenance.
+
+## Configuration and run lifecycle
+
+Hydra composes `configs/preprocess.yaml` with the `data`, `masking`, `artifacts`
+and `export` groups. `--config-name kpmp` replaces the data, masking and artefact
+groups for special stains. Preview the effective configuration before processing:
+
+```sh
+uv run --locked python -m src.preprocess data=tcga --cfg job --resolve
+uv run --locked python -m src.preprocess --config-name kpmp --cfg job --resolve
+
+# A custom slide, smaller overview, no coordinate or pixel exports.
+uv run --locked python -m src.preprocess \
+  'data.paths=[/path/to/slide.svs]' thumbnail.max_size=512 export.enabled=false
+
+# Alternative single-mask recipes.
+uv run --locked python -m src.preprocess masking=clam_saturation
+uv run --locked python -m src.preprocess masking=tia_otsu
+uv run --locked python -m src.preprocess masking=tia_morphological
+uv run --locked python -m src.preprocess masking=codait_od
+```
+
+Use either `data.manifest` or `data.paths`, not both. Relative input paths resolve
+from the launch directory even with `hydra.job.chdir=true`; the default is false.
+Each run requires a fresh output directory. `resolved_config.yaml` records task
+settings; `.hydra/<timestamp>/` preserves each invocation's Hydra configuration
+and overrides, including refused attempts to reuse an existing output directory.
+Only manifests with `status: complete` describe completed runs.
+
+A Hydra sweep creates separate numbered job directories. Bounds apply per job:
+
+```sh
+uv run --locked python -m src.preprocess -m data=tcga data.max_slides=1 \
+  export.enabled=false thumbnail.max_size=128,256
+```
+
+If a restricted environment cannot write package caches, set `UV_CACHE_DIR`,
+`MPLCONFIGDIR` and `NUMBA_CACHE_DIR` to writable temporary directories. Optional
+local configs are ignored by Git; a `configs/local/default.yaml` intended to
+change root settings needs Hydra's `# @package _global_` header.
+
+## Inspect metadata and bounded previews
+
+`src.inspection.read_slide_metadata(path)` uses OpenSlide to collect dimensions,
+pyramid levels, downsample factors, recorded x/y MPP, objective power, vendor,
+file size, bounds, associated-image names, ICC information and raw properties.
+The notebook displays metadata before its first overview. No label/macro pixels
+are read. Missing values stay missing; objective power does not supply guessed
+MPP. Physical slide extent includes background. Images remain scanner RGB; this
+demo does not apply ICC colour conversion.
+
+The default overview has a maximum edge of 1024 pixels. Reading is bounded to
+16 million pixels per block and 100 million pixels per slide. If no whole pyramid
+level fits, the lowest usable level is resized in blocks; exceeding the total
+budget fails. Block boundaries can introduce interpolation differences.
+Thumbnail masks lose small structures. Recorded independent x/y scale factors
+map them to level-0 coordinates. PNG/JPEG examples lack known WSI calibration
+and are excluded from calibrated coordinate export.
+
+## Default combined H&E masking
+
+`src.pipeline.preprocess_masks(rgb, masking=..., artifacts=...)` takes ordinary
+mappings and returns candidate, clean and excluded masks, per-reason exclusions,
+intermediate images and applied-threshold metadata. Source RGB is unchanged.
+
+1. Apply configured CODAIT pen-colour, dark and grey exclusions; replace excluded
+   pixels with white in a working image.
+2. Apply TIA grayscale Otsu, then whiten pixels outside its gate. A manual
+   threshold can replace the fitted threshold.
+3. Apply CLAM-style HSV saturation, median filtering, fixed/Otsu thresholding
+   and closing. This threshold is distinct from TIA's grayscale threshold.
+4. Fill enclosed 8-connected background components up to `max_hole_area`.
+   Border-connected background and larger holes remain.
+5. Reapply CODAIT exclusions and remove small foreground components. Filling
+   can extend beyond the preliminary TIA gate but cannot restore exclusions.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `masking.tia_enabled` | `true` | Preliminary TIA grayscale gate |
+| `masking.tia_threshold` | `null` | Fit Otsu; a number overrides it |
+| `masking.median_size` | `7` | Odd saturation kernel, 1–31 mask pixels |
+| `masking.use_otsu` | `true` | Fit saturation Otsu |
+| `masking.saturation_threshold` | `20` | Used when saturation Otsu is disabled |
+| `masking.closing_size` | `3` | Closing kernel edge; 0 disables |
+| `masking.max_hole_area` | `16` | Maximum enclosed area to fill; 0 disables |
+| `artifacts.min_tissue_area` | `64` | Minimum 8-connected tissue area; 0 disables |
+| `artifacts.pen_colors` | `[red,green,blue]` | Enabled colour rules; `[]` disables |
+| `artifacts.pen_thresholds` | `null` | CODAIT defaults or per-colour replacements |
+
+Kernel and area units are thumbnail pixels. Changing thumbnail size changes
+physical meaning. The hole limit is a raster-area policy, separate from upstream
+CLAM's patch-scaled contour-area and maximum-hole-count policy. Closing can bridge
+spaces independently of the hole limit. Air spaces may be real anatomy; these
+masks do not establish anatomical boundaries.
+
+```sh
+uv run --locked python -m src.preprocess masking.max_hole_area=0 \
+  masking.use_otsu=false masking.saturation_threshold=30 \
+  hydra.run.dir=outputs/fixed-mask-demo
+
+uv run --locked python -m src.preprocess data=pen_examples \
+  'artifacts.pen_thresholds={blue:[[60,100,210]]}' \
+  hydra.run.dir=outputs/custom-pen-demo
+```
+
+A rule `[r,g,b]` marks red when `R>r & G<g & B<b`, green when
+`R<r & G>g & B>b`, and blue when `R<r & G<g & B>b`. Rules are OR'ed within each
+colour. An override replaces that colour's entire rule list; omitted colours
+retain defaults, and `[]` disables a colour. Values are integers in 0–255. These
+are editable heuristics, not empirically validated artefact labels. Dark tissue,
+special stains and small fragments can be wrongly excluded. Grey filtering is
+off by default. The [KPMP profile](datasets.md#kpmp-ckd) disables H&E exclusions
+and uses the separate `clam_saturation` mask recipe.
+
+## Upstream CLAM and physical scale
+
+`src.tiling.clam_coordinates` calls upstream `WholeSlideImage.process_contour`
+at commit `53e2409d4a8189c682c173382964a85f114f923c`. It converts the final mask
+to level-0 tissue/child-hole contours; it does not segment the WSI again. Each
+contour anchors its own grid. The default `four_pt` accepts at least one of four
+interior probes. `four_pt_hard`, `center` and `basic` are also available. Patch
+centres strictly inside child holes are rejected; boundary padding is disabled.
+Stable duplicate removal and the default 60% retained-mask coverage threshold
+are explicit additions. `export.tiling_method=coverage_grid` retains the older
+slide-wide grid for reproducibility.
+
+The default exports **all eligible 256-pixel coordinates at 0.5 µm/pixel**.
+`export.coordinate_limit=null` disables coordinate subsampling. Bounds of 128
+tissue contours and 200,000 candidate positions limit work; exceeding a bound
+fails rather than silently dropping eligible coordinates. CLAM uses at most
+four coordinate workers per contour. Pixel reads are sequential.
+
+Calibration requires positive recorded isotropic MPP. For OpenSlide inputs,
+`mpp-x/mpp-y` properties supply calibration; objective-power inference is not
+accepted. Native scans more than 1% coarser than the target are rejected.
+The source footprint is rounded from `output_size × target_mpp / native_mpp`.
+For example, 256 output pixels at 0.252 native MPP require 508 source pixels,
+giving 0.5000625 effective MPP after Pillow Lanczos resizing. Native, target and
+effective MPP are recorded separately. The 0.5 MPP target is a conventional
+20×-equivalent scale, not a claim about scanner objective power.
+
+Actual patch PNGs require one exact `export.pixel_slide_id`. At most 128 are
+saved by default, spread deterministically over that slide's coordinates. Other
+slides save coordinates and thumbnail-derived coverage only. Pixel decoding is
+bounded by `export.max_patch_read_pixels` (100 million per crop); 128 crops of
+508×508 source pixels total about 33 million pixels. Full eligible-coordinate
+export still omits edge strips, failed coverage tiles and tissue missed by the
+mask. Eligible rectangular crops may contain background or artefacts.
+
+Only 256-pixel output is enabled by default; large-region TAR export is off.
+Explicit `[256,4096]` sizes require matching per-size limits. This preserves parts
+of [HIPT's organization](https://github.com/mahmoodlab/HIPT#downloading--preprocessing--organizing-tcga-data),
+but the default does not produce HIPT's large-region inputs or model features.
+
+## Output contract and visual review
+
+```text
+outputs/<run>/
+  manifest.json, resolved_config.yaml, index.html
+  .hydra/<invocation-timestamp>/
+  results/<index>/                    # Thumbnail, masks, stages, metadata
+  overviews/<dataset>/                # All small PNGs in one flat directory
+  datasets/<dataset>/
+    WSIs/<slide_id>.svs               # Relative symlink to the original
+    dataset.csv                      # Participant, slide, label, path; stain if present
+    extracted_mpp0p5_patch256_fp/
+      masks/<slide_id>.jpg            # Green tissue and blue hole contours
+      tissue_masks/<slide_id>.png     # Lossless retained mask
+      patches/<slide_id>.h5           # Level-0 coordinate bag
+      stitches/<slide_id>.jpg         # Thumbnail-derived full coordinate coverage
+      coverage_masks/<slide_id>.png   # Union of all exported footprints
+      patch_images/<slide_id>/       # Selected WSI only: PNGs and index.json
+      sampled_pixel_stitches/         # Selected WSI only: sampled source pixels
+      process_list_autogen.csv
+```
+
+HDF5 `coords` is an `N×2` integer array of level-0 top-left `(x,y)` locations.
+Its CLAM `patch_size` attribute is the **native source footprint**;
+`output_patch_size` records the resized image width. Other attributes include
+`patch_level=0`, downsample, level dimensions, name, save path, calibration,
+backend and upstream revision. `tissue_fraction` stores estimated retained-mask
+coverage; `preview_indices` maps saved images into the full bag. Empty bags are
+explicit. The selected-slide `index.json` records each PNG's coordinate index.
+
+CLAM's coordinate-bag reader reads the native footprint from `patch_size`.
+Downstream transforms must resize to the recorded output size: use
+`--target_patch_size 256` for the default bag in CLAM's feature-extraction CLI.
+This project does not execute or validate downstream CLAM/HIPT models.
+
+The lossless `tissue_holes.png` changes only contour pixels: green tissue
+exteriors and blue holes, without fills. `hole_mask.png` identifies background
+not four-connected to the thumbnail boundary. It describes topology of the
+final mask, after configured cleanup, with no additional visualization cutoff.
+CLAM `masks/` uses a JPEG of this preview; `overlay.png` separately shows artefact
+exclusions. `stitches/` and `sampled_pixel_stitches/` represent different evidence:
+complete coordinate footprints versus bounded source-pixel samples.
+
+Flat galleries contain `__thumbnail.png`, `__mask.png`, `__preprocessed.png`,
+`__overlay.png` and `__tissue_holes.png` for each WSI. Sort by name or filter a
+suffix in Finder; use Command-4 for Gallery or Space for Quick Look. The Streamlit
+viewer labels coordinate counts and saved-image counts separately, supports
+metadata CSV downloads, and hides validation runs by default. Each run has one
+HTML report rather than a report per WSI.
+
+Refresh only these tissue/hole visualizations from saved thumbnails and masks:
+
+```sh
+uv run --locked python -m scripts.refresh_tissue_holes outputs/my-run
+```
+
+## Reusable modules and notebook
+
+| Stage | Module and entry points |
+| --- | --- |
+| Inspect/read | `src.inspection`: `read_slide_metadata`, `read_thumbnail` |
+| Tissue masks | `src.masking`: `create_tissue_mask`, `saturation_mask`, `otsu_mask` |
+| Artefact and tile QC | `src.quality`: `exclude_artifacts`, `tile_quality` |
+| Combined masking | `src.pipeline`: `preprocess_masks` |
+| Calibrate/tile/read | `src.tiling`: `calibrated_patch_size`, `clam_coordinates`, `read_tile`, `contour_tile_mask` |
+| Export/review | `src.export`, `src.report` |
+| Shared arrays | `src.image_utils`: validation, component/hole operations, background preparation, PNG output |
+
+Numerical helpers take explicit arrays and parameters, preserve their inputs,
+and do not create output directories. RGB is `uint8 H×W×3`, masks are `bool H×W`,
+locations/sizes use `(x,y)`/`(width,height)`, and arrays index `[y,x]`. Mask bounds
+use floor for left/top and ceil for right/bottom. `read_tile` accepts a
+caller-owned CLAM/OpenSlide handle, checks bounds and rejects padding/missing
+pixels before resizing. The export adapter requires square/isotropic calibration;
+the general calibration utility also supports rectangular regions.
+
+Compatibility imports in `src.preprocess`, `src.filters` and `src.export` remain
+available. Use owning modules in new code. Legacy `tissue_mask` handles single
+mask recipes; use `preprocess_masks` for the combined recipe. `src/clam_tiling.py`
+is retained for historical callers; the default routes through upstream CLAM.
+
+The notebook reads at most 36 real tiles, including lower-coverage controls,
+with explicit candidate and per-read pixel budgets. Its QC requires thumbnail
+and raw saturation coverage. Laplacian variance is descriptive, not a validated
+focus threshold. The intentionally sampled retention rate does not estimate
+whole-slide quality. Settings and source coordinates are saved for review.
+
+## Optional stain normalization
+
+Normalization is optional and is not called by the default WSI preprocessing
+entrypoint. The notebook and other callers share these functions:
+
+| Function | Responsibility |
+| --- | --- |
+| `image_utils.mean_background_color(rgb, background_mask)` | Mean RGB over an explicit background sample; empty samples fail |
+| `image_utils.fill_background(rgb, tissue_mask, background_rgb)` | Copy RGB and replace non-tissue pixels with an explicit colour |
+| `tiling.contour_tile_mask(...)` | Project tissue/child-hole contours into a tile |
+| `normalization.prepare_stain_image(...)` | Validate pixel bounds and prepare original or constant-background RGB |
+| `normalization.fit_stain_normalizer(...)` | Fit a supported TIA method to a prepared reference |
+| `normalization.normalize_tile(...)` | Prepare source, transform and restore background when a mask is supplied |
+| `normalization.compare_stain_normalization(...)` | Matched original/constant-background comparisons with results and timings |
+
+These functions accept arrays, masks and explicit parameters. They do not depend
+on notebook globals, slide IDs, plotting, filesystem output or Hydra. All original
+arrays are preserved. The comparison accepts source-image and source-mask mappings
+with arbitrary matching IDs, validates them before fitting, uses the same
+reference/source identities and seed in both paths, and restores the caller's
+NumPy RNG state. It runs serially because TIA Vahadane lacks a per-instance random-state
+parameter. `methods` and `max_pixels` are caller-configurable.
+
+### Use the average background colour
+
+Use reviewed tissue contours, including child holes, to define tissue. Estimate
+the **mean RGB of the slide's original non-tissue background**, excluding known
+artefact candidates. Round the mean to integer RGB and use that one colour in
+both the reference and every source tile, before fitting/transformation and when
+restoring non-tissue pixels afterwards. The demo estimates it from the original
+thumbnail outside the final mask, excluding CODAIT-flagged pixels. It displays and
+records both unrounded and applied RGB, sample count and the background-sampling
+mask. It does not use pure white or different fills for each tile.
+
+```python
+import numpy as np
+from src.image_utils import mean_background_color
+from src.normalization import compare_stain_normalization
+
+# Inputs are caller-owned RGB arrays and boolean masks.
+mean_rgb = mean_background_color(slide_rgb, background_sample_mask)
+fill_rgb = np.rint(mean_rgb).astype(np.uint8)
+comparison = compare_stain_normalization(
+    reference_rgb, source_images, reference_mask=reference_mask,
+    source_masks=source_masks, background_rgb=fill_rgb,
+    methods=['reinhard', 'macenko', 'ruifrok', 'vahadane'], random_seed=0,
+)
+# comparison['images'][method]['unmasked' or 'constant_background'][sample_id]
+```
+
+The original-background path fits and transforms raw reference/source RGB with
+no masking or restoration. The other path replaces background with the shared
+mean colour. Every method uses identical reference and source tile identities.
+The notebook shows input preparation and a separate matched comparison for each
+method. Raw exports are unchanged; normalised PNG filenames/provenance distinguish
+`unmasked` and `constant_background`.
+
+Constant filling is **not** tissue-only statistical fitting. Reinhard's colour
+moments and stain-concentration percentiles include background pixels. The fill
+colour and background fraction can therefore still affect results. Coarse
+contours may remove real tissue, retain artefacts or fill anatomical spaces;
+unflagged stitching marks and misclassified tissue can bias the estimated mean.
+Review the background sampling mask and high-resolution tile borders. For a
+multi-slide study, explicitly choose/fix a common background convention with the
+reference rather than silently changing it across slides.
+
+The notebook selects its reference from retained tiles by coloured-pixel fraction
+and compares a bounded set of other tiles from the same slide. This illustrates
+mechanics, not between-site correction or improved model performance. Choose a
+study's reference using training data only. The masking pipeline still uses its own white working images for
+CODAIT/TIA gating; the estimated colour applies specifically to stain normalisation.
+
+TIA's Ruifrok implementation uses fixed H&E stain vectors with concentration
+matching; Macenko and Vahadane estimate stain directions.
+[TIA documents Vahadane instability](https://tia-toolbox.readthedocs.io/en/latest/_autosummary/tiatoolbox.tools.stainextract.VahadaneExtractor.html)
+with newer scikit-learn dictionary learning. Its output is
+included for teaching and explicitly labelled exploratory, not recommended as a
+validated default. The notebook resets NumPy's seed before each fit/transform
+for matched random starts, reports per-method elapsed times and saves all four
+method comparisons. Remove entries from `STAIN_METHODS` to shorten the demo.
+No additional packages are required.
+
+## Validation and review
+
+Use a fresh directory and a bounded subset of real slides:
+
+```sh
+uv run --locked python -m src.preprocess data=tcga data.max_slides=1 \
+  export.pixel_slide_id=20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b \
+  'export.max_patches=[6]' hydra.run.dir=outputs/validation-combined-clam
+uv run --locked python scripts/verify_run.py outputs/validation-combined-clam --check-regions
+```
+
+The checker verifies mask partitions, combined-stage order, exclusion preservation,
+bounded hole filling, coordinate eligibility, coverage and physical calibration.
+`--check-regions` compares saved source-pixel samples with fresh OpenSlide reads
+and the declared resampling. The notebook checks source integrity, tile bounds,
+QC decisions, saved-image equality and the constant-background contract. Restart
+and run all cells, then inspect metadata, masks, tile/QC sheets and stain figures.
+These checks establish mechanics on the exercised inputs, not biological accuracy,
+stain invariance, artefact-detection accuracy or diagnostic performance.
+
+## Sources and licences
+
+- [lightning-hydra-template](https://github.com/ashleve/lightning-hydra-template)
+  informs the source/config organization. This is a focused preprocessing scaffold;
+  no Lightning trainer is run. `uv sync --locked --extra train` supplies the optional
+  future-training dependency set.
+- [TIAToolbox](https://github.com/TissueImageAnalytics/tiatoolbox) supplies bounded
+  overview reading, Otsu/morphological masking and optional stain normalization.
+- [Pinned upstream CLAM](https://github.com/mahmoodlab/CLAM/blob/53e2409d4a8189c682c173382964a85f114f923c/wsi_core/WholeSlideImage.py)
+  supplies contour tiling and the OpenSlide handle. The vendored subset, GPLv3
+  licence and file hashes are under `third_party/CLAM/`.
+- [CODAIT deep-histopath](https://github.com/CODAIT/deep-histopath) supplies the
+  attributed pen/grey filters and optical-density convention. See the
+  [source revisions, changes and preserved notices](../third_party/README.md).
+- [histolab](https://github.com/histolab/histolab) is a composable-masking reference.
+  It is not installed in this locked environment; the attributed CODAIT filters
+  provide the colour-exclusion implementation.
+- [OpenSlide API](https://openslide.org/api/python/),
+  [TIA 2.1.3 normalization](https://github.com/TissueImageAnalytics/tiatoolbox/blob/v2.1.3/tiatoolbox/tools/stainnorm.py)
+  and [stain extraction](https://github.com/TissueImageAnalytics/tiatoolbox/blob/v2.1.3/tiatoolbox/tools/stainextract.py)
+  document the reader and optional normalization implementations.
