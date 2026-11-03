@@ -1,0 +1,6 @@
+# @package _global_
+data:
+  task: mil
+  batch_size: 1
+model:
+  pooling: mean

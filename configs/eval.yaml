@@ -1,0 +1,5 @@
+defaults:
+  - train
+  - _self_
+ckpt_path: ???
+test: true

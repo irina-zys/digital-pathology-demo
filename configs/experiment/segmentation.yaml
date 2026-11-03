@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - override /model: unet
+data:
+  task: segmentation
+  batch_size: 2
+  image_size: null # Preserve native patch geometry and annotation boundaries.
+  mean: [0.0, 0.0, 0.0]
+  std: [1.0, 1.0, 1.0]

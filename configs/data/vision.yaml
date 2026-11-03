@@ -1,0 +1,14 @@
+_target_: src.data.vision.VisionDataModule
+manifest: ???
+data_root: .
+task: classification
+class_names: ${class_names}
+batch_size: 8
+num_workers: 0
+image_size: 224
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
+augment: true
+max_pixels: 4000000
+max_samples_per_split: null
+max_patches_per_bag: 64

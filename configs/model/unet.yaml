@@ -1,0 +1,5 @@
+_target_: src.models.vision.UNet
+base_channels: 16
+threshold: 0.5
+lr: 0.001
+weight_decay: 0.0001

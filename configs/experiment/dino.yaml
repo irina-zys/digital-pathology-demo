@@ -1,0 +1,9 @@
+# @package _global_
+# Published DINO v1 ViT-S/16 on ImageNet-1k, not a pathology-specific foundation model.
+model:
+  encoder:
+    name: vit_small_patch16_224.dino
+    pretrained: true
+    freeze: true
+data:
+  image_size: 224

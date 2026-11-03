@@ -1,0 +1,16 @@
+_target_: lightning.Trainer
+accelerator: cpu
+devices: 1
+precision: 32-true
+max_epochs: 10
+max_time: '00:01:00:00'
+deterministic: true
+log_every_n_steps: 1
+num_sanity_val_steps: 2
+limit_train_batches: 1.0
+limit_val_batches: 1.0
+limit_test_batches: 1.0
+accumulate_grad_batches: 1
+enable_progress_bar: true
+enable_model_summary: true
+default_root_dir: ${hydra:runtime.output_dir}

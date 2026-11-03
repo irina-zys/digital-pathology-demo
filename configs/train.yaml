@@ -1,0 +1,25 @@
+defaults:
+  - _self_
+  - data: vision
+  - model: classifier
+  - trainer: default
+  - callbacks: default
+  - logger: csv
+  - experiment: null
+
+seed: 42
+num_threads: 2
+class_names: null # Required for classifiers; label integers index this ordered list.
+ckpt_path: null
+# Keep the held-out test set opt-in during model development.
+test: false
+
+hydra:
+  output_subdir: .hydra/${now:%Y-%m-%d_%H-%M-%S-%f}
+  run:
+    dir: outputs/training/${now:%Y-%m-%d_%H-%M-%S-%f}
+  sweep:
+    dir: outputs/training/multirun/${now:%Y-%m-%d_%H-%M-%S-%f}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false
