@@ -154,9 +154,10 @@ attention uses a tanh MLP and a softmax over patches before the weighted average
 Attention weights are learned aggregation weights, not verified explanations.
 
 The default is one CPU device, two Torch threads, zero loader workers, ten epochs
-and a one-hour Trainer time bound. Data/epoch/batch bounds remain configurable.
-One GPU or MPS device can be selected through `trainer.accelerator`; distributed
-execution is deliberately not supported by this small runner. For sweeps, Hydra
+and a one-hour Trainer time bound. Reaching that time limit prevents a complete
+`metrics.json`; available logs and checkpoints are retained. Data/epoch/batch
+bounds remain configurable. One GPU or MPS device can be selected through
+`trainer.accelerator`; distributed execution is deliberately not supported by this small runner. For sweeps, Hydra
 `-m model.optimizer.lr=0.0001,0.001` produces separate output directories.
 
 ## Run records
@@ -343,12 +344,15 @@ and RGB bytes are checked across all six fits before plotting. Gradient panels
 retain their independent 99th-percentile scales; brightness is not an absolute
 sensitivity comparison.
 
-The third patch row is retained as a **QC negative example**: the red-pen loop
-on glass at level-0 `(92076, 23066)` in TCGA-85-7698, checked in its larger WSI
-context. It passed the cached CLAM-saturation eligibility mask. All three
-pretrained encoders produce features and visual responses for it; this includes
-pathology-pretrained UNI. A three-model table reports its actual pooling weight,
-within-slide rank and ratio to equal weighting. This illustrates why pretrained
+In the saved CLAM-saturation example, the third patch row is a **QC negative
+example**: the red-pen loop on glass at level-0 `(92076, 23066)` in TCGA-85-7698,
+checked in its larger WSI context. All three pretrained encoders produced features
+and visual responses for it, including pathology-pretrained UNI. The notebook
+checks whether a new coordinate export retains that exact patch origin and
+whether it is among the selected localization rows. When present, its three-model
+table reports actual pooling weight, within-slide rank and ratio to equal
+weighting; otherwise its absence is reported. A different grid can change patch
+origins without removing all ink in that region. This illustrates why pretrained
 models still require tissue/artefact QC, without claiming a causal accuracy gain
 from filtering or presenting a paired QC-on/QC-off experiment.
 

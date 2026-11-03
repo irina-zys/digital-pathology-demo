@@ -53,8 +53,9 @@ Existing installed packages satisfy the vendored subset's imports; no dependenci
 were added.
 
 TIAToolbox supplies the normalisation implementations; `src/imaging_utils/normalization.py`
-offers unmasked or contour-based constant backgrounds for Reinhard, Macenko, Ruifrok
-and Vahadane, restoring the supplied background colour after transformation only for the masked path.
+offers unmasked inputs or constant backgrounds defined by caller-supplied boolean
+masks for Reinhard, Macenko, Ruifrok and Vahadane, restoring the supplied background
+colour after transformation only for the masked path.
 It does not alter TIA's statistical estimators. CODAIT normalisation code was not
 copied. Keep the GPLv3 licence and source notices when redistributing this subset.
 

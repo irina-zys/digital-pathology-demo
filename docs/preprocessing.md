@@ -577,9 +577,9 @@ stain invariance, artefact-detection accuracy or diagnostic performance.
 ## Sources and licences
 
 - [lightning-hydra-template](https://github.com/ashleve/lightning-hydra-template)
-  informs the source/config organization. This is a focused preprocessing scaffold;
-  no Lightning trainer is run. `uv sync --locked --extra train` supplies the optional
-  future-training dependency set.
+  informs the source/config organization. The preprocessing entrypoint does not
+  run a Lightning trainer. `uv sync --locked --extra train` enables the separate
+  [training workflows](training.md).
 - [TIAToolbox](https://github.com/TissueImageAnalytics/tiatoolbox) supplies bounded
   overview reading, Otsu/morphological masking and optional stain normalization.
 - [Pinned upstream CLAM](https://github.com/mahmoodlab/CLAM/blob/53e2409d4a8189c682c173382964a85f114f923c/wsi_core/WholeSlideImage.py)

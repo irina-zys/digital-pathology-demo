@@ -1,8 +1,10 @@
 # Digital pathology demo
 
-A small CPU workflow for inspecting whole-slide images (WSIs), making tissue
-masks and thumbnails, reviewing suspected artefacts, and exporting calibrated
-CLAM patch coordinates. Source slides stay read-only in one local data directory.
+Bounded digital pathology teaching workflows for inspecting whole-slide images
+(WSIs), reviewing tissue masks and artefacts, exporting calibrated CLAM coordinates,
+and exploring nuclei segmentation and slide classification. Preprocessing runs on
+CPU; model workflows have their own resource settings. Source slides stay read-only
+in one local data directory.
 
 ## Quick start
 

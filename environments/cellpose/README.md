@@ -1,7 +1,8 @@
 # Classical Cellpose nuclei inference
 
-This separate uv environment keeps Cellpose 3.1.1.2's NumPy 2.0 requirement and
-headless OpenCV apart from the main preprocessing environment. It uses the
+This separate uv environment keeps Cellpose 3.1.1.2's NumPy `<2.1` constraint and
+headless OpenCV apart from the main preprocessing environment. This project pins
+NumPy to 2.0.2 in the Cellpose environment. It uses the
 classical `nuclei` ResUNet checkpoint, not Cellpose-SAM. Python is pinned to the
 3.12 series; all resolved dependencies are recorded in this directory's lockfile.
 

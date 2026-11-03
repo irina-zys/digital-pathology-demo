@@ -1,14 +1,71 @@
-# Modular source and caller audit — 2026-11-03
+# Repository review and modular-source audit — 2026-11-03
 
 [Project structure](hydra-and-project-structure.md) · [Training](training.md) · [Preprocessing](preprocessing.md)
 
-This audit covers project-owned source, operational scripts, Hydra configuration,
-notebook source cells and Markdown references affected by the modular refactor.
-It preserves historical artifacts, notebook outputs, dependency locks and vendored
-upstream source. Existing notebook outputs were retained; validation executed
-current source in separate output directories.
+The earlier modular-refactor audit recorded below covered project-owned source,
+scripts, configuration and caller migration. It retained the notebook outputs
+then present. The follow-up distinguishes subsequent source review, new execution
+and refreshed outputs; dependency locks and vendored source remain unchanged.
 
-## Ownership after the audit
+## Repository-wide review follow-up (base `8716cc1`)
+
+Source review covered all 174 tracked code/configuration/notebook/provenance
+entries, plus the documentation, manifests, environment, ignore and hook
+contracts. All five notebook sources and 23 saved figures were inspected. Local
+links, Python examples and both locked environments passed checks. Twelve
+unmodified vendored files matched pinned upstream bytes; the HoVer-NeXt
+postprocess adaptation matched its notice. These are provenance and review
+checks, not a proof of upstream correctness.
+
+Targeted fixes reject time-exhausted training as complete, bind inference to the
+requested feature bag and validate cache fingerprints, reject boolean export
+limits, and correct disabled-stage provenance and viewer labels. Notebook setup
+now declares training dependencies and handles changed coordinate grids without
+assuming the historical red-pen patch is present.
+
+Current execution used real local inputs and isolated outputs:
+
+- Eighteen training CLI cases passed: eleven normal workflows and seven expected
+  rejections, with fifteen configuration compositions. Normal checks used one
+  CPU device, two threads, no loader workers, two training updates and one
+  validation/test batch. Normal early stopping and fast-development runs remained
+  accepted; thirty existing caches and ten complete-bag predictions passed.
+- CMU, two TCGA lung slides and four KPMP stains completed preprocessing and
+  independent region verification. Streamlit AppTest, refresh and existing-asset
+  integrity checks passed. The actual notebook QC branch handled the absent
+  historical patch origin in the new 7,471-coordinate severe-slide lung export;
+  this did not require new features or training.
+- Preprocessing (including all four stain methods), the two-epoch training
+  schedule and the two-patch HoVer-NeXt/Cellpose notebook completed top to bottom.
+  The documented Lightning reassembly also returned exactly equal real-patch logits.
+- The classification notebook completed all six 20-epoch fits on MPS, using
+  complete bags containing 48,621 patches per encoder and thirty unchanged
+  feature caches. Its interpretation figures were regenerated. This exercised
+  cached-feature training, not fresh complete-cohort feature extraction.
+
+Preprocessing, training-schedule and classification outputs were refreshed in the
+tracked notebooks. Segmentation was rerun in a validation copy; its earlier
+canonical outputs remain. KPMP's saved overview was inspected rather than rerun.
+A missing exact patch origin can reflect a shifted grid and does not establish
+spatial artefact removal or improved prediction.
+
+Four dormant CLAM helpers remain flagged: `initTxt` evaluates annotation text,
+`initSegmentation` deserializes pickle, `StitchPatches` reads a closed HDF5 dataset,
+and an empty score-window selection in `sample_rois` indexes the final patch.
+Repository workflows/configuration do not call or expose these helpers; pinned
+vendor files were preserved. Direct use of these additional upstream APIs is
+outside the supported adapter contract. Native `segmentTissue` is used by the
+notebook's explicit CLAM comparison and is distinct from these dormant paths.
+
+Receipts are under `outputs/repo-audit-20261103/{preprocessing,notebooks}/`, the
+classification notebook's `saved_execution.validation_receipt`,
+`/private/tmp/pathology-training-audit-20261103/` and
+`/tmp/pathology-docs-audit-ledger.json`. Temporary paths are local evidence, not
+committed fixtures or durable storage. Fresh/resumed downloads, new QuPath
+projects and every optional export branch were not executed. These checks do not
+establish convergence, biological accuracy, generalization or model superiority.
+
+## Earlier modular-refactor ownership
 
 | Owner | Responsibility |
 | --- | --- |

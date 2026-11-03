@@ -29,10 +29,13 @@ TCGA-85-7698 WSI, which contains prominent red, green and blue pen marks.
 
 ## Notebook input preparation
 
-Each demo's first setup cell calls `scripts/prepare_demo_inputs.py`. It verifies
+The preprocessing, annotation/segmentation and WSI classification notebooks call
+`scripts/prepare_demo_inputs.py` in their setup cells. It verifies
 existing canonical inputs and calls repository downloaders only for missing
 assets. It never installs packages, overwrites invalid files or downloads gated
-UNI weights. Prepare the documented locked environments first.
+UNI weights. Prepare the documented locked environments first. The KPMP overview
+instead calls `download_kpmp.py`; the training schedule reuses a prepared
+classification split.
 
 ```sh
 uv run --locked python scripts/prepare_demo_inputs.py --demo preprocessing
