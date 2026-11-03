@@ -11,6 +11,9 @@ import time
 
 CHECKPOINT_NAME = "nucleitorch_0"
 CHECKPOINT_BYTES = 26_563_614
+SIZE_CHECKPOINT_NAME = "size_nucleitorch_0.npy"
+SIZE_CHECKPOINT_BYTES = 3627
+SIZE_CHECKPOINT_SHA256 = "a79107c9f284b569dd65f3a7363014d613a3403241c062822f07b6f026b4d3ef"
 MAX_INPUT_PIXELS = 256 * 256
 
 
@@ -46,13 +49,56 @@ def load_cellpose(checkpoint, checkpoint_sha256, *, device="cpu"):
     return model
 
 
+
+def estimate_cellpose_diameter(model, rgb, checkpoint, *, channels, invert):
+    """Use the official size model on the same image signal; observe its refinement fallback."""
+    import numpy as np
+    import torch
+    from cellpose import models
+
+    path = Path(checkpoint).parent / SIZE_CHECKPOINT_NAME
+    if (not path.is_file() or path.stat().st_size != SIZE_CHECKPOINT_BYTES
+            or sha256(path) != SIZE_CHECKPOINT_SHA256):
+        raise ValueError("Prepare the verified matching Cellpose size checkpoint before automatic sizing")
+    estimator = models.SizeModel(cp_model=model, pretrained_size=str(path))
+    original_eval = model.eval
+    refinement = {}
+
+    def observed_eval(*args, **kwargs):
+        result = original_eval(*args, **kwargs)
+        if kwargs.get("compute_masks") is True:
+            refinement["objects"] = int(len(np.unique(result[0][result[0] > 0])))
+        return result
+
+    # The official estimator silently substitutes its training mean after an empty refinement.
+    model.eval = observed_eval
+    try:
+        with torch.inference_mode():
+            diameter, style = estimator.eval(rgb.copy(), channels=list(channels), channel_axis=-1,
+                normalize={"normalize": True, "percentile": [1, 99], "invert": invert},
+                invert=invert, augment=False, batch_size=1)
+    finally:
+        model.eval = original_eval
+    if "objects" not in refinement:
+        raise RuntimeError("The pinned size estimator did not execute its expected mask-refinement pass")
+    if not np.isfinite([diameter, style]).all() or not 5 <= float(diameter) <= 128:
+        raise ValueError("Estimated diameter exceeds the declared 5-128 pixel bounds; supply a manual estimate")
+    if sha256(path) != SIZE_CHECKPOINT_SHA256:
+        raise RuntimeError("Size checkpoint changed during estimation")
+    return {"method": "official_size_model", "diameter": float(diameter), "style_diameter": float(style),
+            "refinement_objects": refinement["objects"], "fallback_to_training_mean": refinement["objects"] == 0,
+            "training_mean_diameter": float(estimator.diam_mean), "checkpoint": str(path),
+            "checkpoint_sha256": SIZE_CHECKPOINT_SHA256, "ground_truth_used": False}
+
+
 def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
                  diameter=17.0, channels=(0, 0), invert=False, max_pixels=MAX_INPUT_PIXELS):
     """Write uint32 instance labels and provenance for one existing RGB PNG.
 
     Diameter is in input pixels, channels use Cellpose's 0=gray/1=R/2=G/3=B
     convention, and the second channel must be zero for the nuclei model.
-    No size estimation, restoration, SAM model, prompt or annotation input is used.
+    diameter=None or 0 uses the matching official size estimator on this image.
+    No restoration, SAM model, prompt or annotation input is used.
     """
     import numpy as np
     from PIL import Image
@@ -66,8 +112,9 @@ def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
     output_dir = output_dir.resolve()
     if input_path.suffix.lower() != ".png" or not 0 < input_path.stat().st_size <= 8_000_000:
         raise ValueError("Input must be a PNG no larger than 8 MB")
-    if not np.isfinite(diameter) or not 5 <= diameter <= 128:
-        raise ValueError("diameter must be finite and between 5 and 128 input pixels")
+    automatic_size = diameter is None or diameter == 0
+    if not automatic_size and (not np.isfinite(diameter) or not 5 <= diameter <= 128):
+        raise ValueError("diameter must be 0/None (automatic) or finite and between 5 and 128 input pixels")
     channels = tuple(channels)
     if len(channels) != 2 or channels[0] not in (0, 1, 2, 3) or channels[1] != 0:
         raise ValueError("Nuclei channels must be [0/1/2/3, 0]")
@@ -85,10 +132,18 @@ def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
     started = time.monotonic()
     import torch
     model = load_cellpose(checkpoint, checkpoint_sha256)
+    calibration = (estimate_cellpose_diameter(model, rgb, checkpoint, channels=channels, invert=invert)
+                   if automatic_size else {"method": "manual", "diameter": float(diameter), "source": "caller_supplied", "annotations_supplied": False})
+    if calibration.get("fallback_to_training_mean"):
+        output_dir.mkdir(parents=True)
+        (output_dir / "failure.json").write_text(json.dumps({"status": "failed", "diameter_estimation": calibration,
+            "error": "Size refinement found no objects; inspect RGB and supply an explicit diameter"}, indent=2))
+        raise ValueError("Automatic size refinement found no objects; saved fallback metadata; specify a manual diameter")
+    diameter = calibration["diameter"]
     settings = dict(channels=list(channels), channel_axis=-1, diameter=float(diameter),
         normalize={"normalize": True, "percentile": [1, 99], "invert": invert},
         invert=invert, batch_size=1, do_3D=False, augment=False, resample=True,
-        bsize=224, niter=200, flow_threshold=0.4, cellprob_threshold=0.0,
+        bsize=224, niter=None, flow_threshold=0.4, cellprob_threshold=0.0,
         min_size=15, max_size_fraction=0.4)
     from cellpose import models, transforms
     # Use the pinned library's own channel/normalization functions for the teaching preview.
@@ -116,7 +171,7 @@ def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
         "input": str(input_path), "input_sha256": input_digest,
         "dimensions": [rgb.shape[1], rgb.shape[0]], "max_input_pixels": max_pixels,
         "checkpoint": str(checkpoint), "checkpoint_sha256": checkpoint_sha256,
-        "checkpoint_bytes": CHECKPOINT_BYTES, "settings": settings,
+        "checkpoint_bytes": CHECKPOINT_BYTES, "settings": settings, "diameter_estimation": calibration,
         "mask": "masks.tif", "dtype": "uint32", "background": 0,
         "instance_count": len(ids), "foreground_pixels": int(np.count_nonzero(labels)),
         "finite_labels_flows_styles": True, "source_and_checkpoint_unchanged": True,
@@ -150,7 +205,7 @@ def main():
     parser.add_argument("output", type=Path)
     parser.add_argument("--checkpoint", type=Path, required=True)
     parser.add_argument("--checkpoint-sha256", required=True)
-    parser.add_argument("--diameter", type=float, default=17.0)
+    parser.add_argument("--diameter", type=float, default=17.0, help="Input nucleus diameter; 0 uses the verified size model")
     parser.add_argument("--channels", type=int, nargs=2, default=[0, 0])
     parser.add_argument("--invert", action="store_true")
     parser.add_argument("--max-pixels", type=int, default=MAX_INPUT_PIXELS)

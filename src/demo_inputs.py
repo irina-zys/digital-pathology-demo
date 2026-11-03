@@ -27,8 +27,12 @@ MODEL_FILES = {
         ("data/models/hovernext/pannuke_convnextv2_tiny_1/train/best_model", 144433761,
          "0c75821cfc2a0a49f7f75ebb57a4e4842f9ddd67798841180a6e3d8091261ed0"),
     ],
-    "cellpose": [("data/models/cellpose/nucleitorch_0", 26563614,
-                  "89ca45e4a45048d5010d29621466b1274b91b3dcb9714dce9f9e90a9a8671303")],
+    "cellpose": [
+        ("data/models/cellpose/nucleitorch_0", 26563614,
+         "89ca45e4a45048d5010d29621466b1274b91b3dcb9714dce9f9e90a9a8671303"),
+        ("data/models/cellpose/size_nucleitorch_0.npy", 3627,
+         "a79107c9f284b569dd65f3a7363014d613a3403241c062822f07b6f026b4d3ef"),
+    ],
     "dino": [(f"{DINO_FOLDER}/snapshots/{DINO_REVISION}/model.safetensors", 86676340, DINO_SHA256)],
 }
 SEGMENTATION_FILES = {

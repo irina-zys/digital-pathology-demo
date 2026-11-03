@@ -120,7 +120,8 @@ def run_cellpose_patch(rgb, output_dir, *, checkpoint, checkpoint_sha256=CELLPOS
     """Run one real patch in the isolated Cellpose environment and retain its outputs.
 
     The caller owns the output directory choice; existing outputs are refused.
-    Diameter is measured in input pixels and is an explicit model assumption.
+    Diameter is measured in input pixels; None/0 uses the verified size model
+    beside the nuclei checkpoint, with the same channel and polarity settings.
     Optional cache_dir scopes the child process Numba cache to a writable directory.
     """
     import tifffile
@@ -128,8 +129,8 @@ def run_cellpose_patch(rgb, output_dir, *, checkpoint, checkpoint_sha256=CELLPOS
     _bounded_rgb(rgb, max_pixels)
     if max(rgb.shape[:2]) > 256 or max_pixels > 65_536:
         raise ValueError("The Cellpose demo is bounded to 256 pixels per edge")
-    if not np.isfinite(diameter) or not 5 <= diameter <= 128:
-        raise ValueError("diameter must be finite and between 5 and 128 input pixels")
+    if diameter is not None and diameter != 0 and (not np.isfinite(diameter) or not 5 <= diameter <= 128):
+        raise ValueError("diameter must be 0/None (automatic) or finite and between 5 and 128 input pixels")
     if (type(invert) is not bool or len(channels) != 2 or
             any(type(c) is not int for c in channels) or channels[0] not in range(4) or channels[1] != 0):
         raise ValueError("Use a boolean invert flag and nuclei channels [0/1/2/3, 0]")
@@ -153,7 +154,7 @@ def run_cellpose_patch(rgb, output_dir, *, checkpoint, checkpoint_sha256=CELLPOS
         Image.fromarray(rgb).save(image)
         command = [str(python), "-m", "src.cellpose_worker", str(image), str(output),
                    "--checkpoint", str(checkpoint), "--checkpoint-sha256", digest,
-                   "--diameter", str(diameter), "--channels", *map(str, channels),
+                   "--diameter", str(0 if diameter is None else diameter), "--channels", *map(str, channels),
                    "--max-pixels", str(max_pixels)]
         if invert:
             command.append("--invert")

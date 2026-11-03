@@ -26,6 +26,10 @@ HOVER_FILES = {
 CELLPOSE_URL = "https://www.cellpose.org/models/nucleitorch_0"
 CELLPOSE_SIZE = 26563614
 CELLPOSE_SHA256 = "89ca45e4a45048d5010d29621466b1274b91b3dcb9714dce9f9e90a9a8671303"
+CELLPOSE_SIZE_MODEL_NAME = "size_nucleitorch_0.npy"
+CELLPOSE_SIZE_MODEL_URL = f"https://www.cellpose.org/models/{CELLPOSE_SIZE_MODEL_NAME}"
+CELLPOSE_SIZE_MODEL_BYTES = 3627
+CELLPOSE_SIZE_MODEL_SHA256 = "a79107c9f284b569dd65f3a7363014d613a3403241c062822f07b6f026b4d3ef"
 # Original UNI pins match src.pretrained; they identify UNI, not UNI2.
 UNI_REPO = "MahmoodLab/UNI"
 UNI_REVISION = "b55a5ec6cade1a39edfe6534189a9b8ca7a022f0"
@@ -148,13 +152,27 @@ def hovernext():
 
 def cellpose():
     path = MODELS / "cellpose/nucleitorch_0"
+    size_path = path.with_name(CELLPOSE_SIZE_MODEL_NAME)
+    for asset, size, digest in ((path, CELLPOSE_SIZE, CELLPOSE_SHA256),
+                                (size_path, CELLPOSE_SIZE_MODEL_BYTES, CELLPOSE_SIZE_MODEL_SHA256)):
+        if asset.exists() or asset.is_symlink():
+            verify(asset, size, digest)
     download(path, CELLPOSE_URL, CELLPOSE_SIZE, CELLPOSE_SHA256)
+    download(size_path, CELLPOSE_SIZE_MODEL_URL, CELLPOSE_SIZE_MODEL_BYTES, CELLPOSE_SIZE_MODEL_SHA256)
     receipt(path.parent / "provenance.json", {
         "model": "Cellpose classical nuclei", "cellpose_version": "3.1.1.2", "checkpoint": path.name,
         "source_url": CELLPOSE_URL, "bytes": CELLPOSE_SIZE, "sha256": CELLPOSE_SHA256,
         "sha256_source": "pinned previously verified local acquisition; no upstream checksum supplied",
         "weights_notice": "Official release notes state nuclei training includes CC-BY-NC data; preserve model notices.",
         "release_notice": "https://github.com/MouseLand/cellpose/blob/v3.1.1.2/README.md",
+    })
+    receipt(path.parent / "size_provenance.json", {
+        "model": "Cellpose nuclei size regressor", "cellpose_version": "3.1.1.2",
+        "checkpoint": size_path.name, "source_url": CELLPOSE_SIZE_MODEL_URL,
+        "bytes": CELLPOSE_SIZE_MODEL_BYTES, "sha256": CELLPOSE_SIZE_MODEL_SHA256,
+        "sha256_source": "pinned official-source acquisition; no upstream checksum supplied",
+        "purpose": "image-only size calibration for the classical nuclei model",
+        "format": "NumPy object dictionary; verify pinned size and SHA-256 before loading",
     })
     return path
 

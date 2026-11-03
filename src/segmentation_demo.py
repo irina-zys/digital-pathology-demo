@@ -18,6 +18,7 @@ from src.annotations import coco_samples, convert_annotations, rasterize, read_m
 from src.pretrained import CELLPOSE_SHA256, checkpoint_sha256, load_hovernext, predict_hovernext, run_cellpose_patch
 from src.metrics import compare_instances, comparison_row
 from src.postprocessing import filter_small_instances
+from src.cellpose_worker import SIZE_CHECKPOINT_NAME, SIZE_CHECKPOINT_BYTES, SIZE_CHECKPOINT_SHA256
 
 
 def _json(path, value):
@@ -57,15 +58,18 @@ def prepare_demo(project, output_root=None):
              'nuinsseg_ambiguous': nu/'vague areas/mask binary/human_bladder_01.png'}
     hover_path = project/'data/models/hovernext/pannuke_convnextv2_tiny_1'
     cell_path = project/'data/models/cellpose/nucleitorch_0'
+    size_path = cell_path.parent/SIZE_CHECKPOINT_NAME
     python = project/'environments/cellpose/.venv/bin/python'
     try:
-        for path in [*files.values(), cell_path, python]:
+        for path in [*files.values(), cell_path, size_path, python]:
             if not path.is_file():
                 raise FileNotFoundError(f'Missing local input: {path}; see docs/pretrained-models.md and docs/datasets.md')
         if files['coco_json'].stat().st_size > 64_000_000:
             raise ValueError('COCO JSON exceeds the separate 64 MB parsing bound')
         if checkpoint_sha256(cell_path) != CELLPOSE_SHA256:
             raise ValueError('Cellpose checkpoint checksum differs from the pinned release')
+        if size_path.stat().st_size != SIZE_CHECKPOINT_BYTES or checkpoint_sha256(size_path) != SIZE_CHECKPOINT_SHA256:
+            raise ValueError('Cellpose size checkpoint differs from the pinned official asset')
         torch.set_num_threads(1)
         if torch.get_num_interop_threads() != 1:
             torch.set_num_interop_threads(1)
@@ -78,7 +82,7 @@ def prepare_demo(project, output_root=None):
         hover = load_hovernext(hover_path, device='cpu')
         statuses = [{'component': 'Main Python / PyTorch', 'status': 'ready', 'detail': importlib.metadata.version('torch')},
                     {'component': 'HoVer-NeXt weights', 'status': 'verified', 'detail': 'PanNuke Tiny fold 1; CPU'},
-                    {'component': 'Cellpose environment / weights', 'status': 'verified', 'detail': '3.1.1.2; nucleitorch_0; CPU'},
+                    {'component': 'Cellpose environment / weights', 'status': 'verified', 'detail': '3.1.1.2; nuclei and official size model; CPU'},
                     {'component': 'Output / Numba cache', 'status': 'writable', 'detail': str(cache)}]
         _json(out/'preflight.json', {'status': 'complete', 'components': statuses})
     except Exception as error:
@@ -133,11 +137,11 @@ def load_demo_patches(demo):
     return patches
 
 
-def run_prediction(demo, name, model, *, invert=False, diameter=17.0, iou_threshold=0.5):
+def run_prediction(demo, name, model, *, invert=None, diameter=None, iou_threshold=0.5):
     """Run and retain a new attempt, so re-executing notebook cells never overwrites predictions."""
     if name not in demo['patches'] or model not in {'hovernext', 'cellpose'}:
         raise ValueError('Choose a loaded patch and hovernext/cellpose')
-    if model == 'hovernext' and (invert or diameter != 17):
+    if model == 'hovernext' and (invert not in (None, False) or diameter is not None):
         raise ValueError('Polarity and diameter controls apply only to Cellpose')
     patch = demo['patches'][name]
     directory = _new_directory(demo['out']/'attempts'/model, name)
@@ -146,6 +150,7 @@ def run_prediction(demo, name, model, *, invert=False, diameter=17.0, iou_thresh
         if model == 'hovernext':
             result = predict_hovernext(patch['rgb'], demo['hover'], max_pixels=65_536)
         else:
+            invert = True if invert is None else invert  # H&E nuclei are dark in this RGB input.
             result = run_cellpose_patch(patch['rgb'], directory/'worker', checkpoint=demo['cellpose_checkpoint'],
                 invert=invert, diameter=diameter, channels=(0, 0), max_pixels=65_536,
                 timeout_seconds=120, cache_dir=demo['cache'])
@@ -277,7 +282,7 @@ def plot_prediction(patch, attempt, title):
     if ev['prediction_all'] == 0:
         axes[2].text(.5, .5, '0 predicted nuclei', transform=axes[2].transAxes, ha='center',
                      bbox={'facecolor': 'white', 'alpha': .9, 'pad': 5})
-    fig.suptitle(f"Matched {ev['matched']} · missed {ev['missed']} · extra {ev['extra']} at IoU ≥ {ev['iou_threshold']}\n"
+    fig.suptitle(f"Matched {ev['matched']} · missed {ev['missed']} · extra {ev['extra']}\n"
                  'Local pixels; physical scale unverified · crop-edge objects retained')
     fig.legend(handles=[Line2D([], [], color='#00bcd4', label='Annotated ground truth', lw=2),
                         Line2D([], [], color='#ffad33', linestyle='--', label='Prediction', lw=2),
@@ -304,7 +309,7 @@ def plot_polarity(patch, baseline, changed):
     fig.subplots_adjust(left=.015, right=.985, bottom=.15, top=.74, wspace=.04)
     for column, ax in enumerate(axes):
         attempt = attempts[column % 2]
-        setting = ('invert=False', 'invert=True')[column % 2]
+        setting = f"invert={attempt['metadata']['settings']['settings']['invert']}"
         if column < 2:
             ax.imshow(attempt['normalized_input'], cmap='gray', vmin=0, vmax=1,
                       extent=(0, width, height, 0), interpolation='nearest')
@@ -323,7 +328,8 @@ def plot_polarity(patch, baseline, changed):
                         bbox={'facecolor': 'white', 'alpha': .9, 'pad': 5})
         ax.set(title=title, xlim=(0, width), ylim=(height, 0), aspect='equal')
         ax.axis('off')
-    fig.suptitle('One NuInsSeg crop · same RGB, diameter=17 px, thresholds and weights\n'
+    diameter = baseline['metadata']['settings']['settings']['diameter']
+    fig.suptitle(f'One NuInsSeg crop · same RGB, diameter={diameter:.1f} px, thresholds and weights\n'
                  'Normalized signal before diameter rescaling; display clipped to [0, 1]', y=.985)
     fig.legend(handles=[Line2D([], [], color='#00bcd4', label='Annotated ground truth', lw=2),
                         Line2D([], [], color='#ffad33', linestyle='--', label='Prediction', lw=2),
@@ -362,8 +368,7 @@ def plot_model_comparison(patches, baseline):
                           '-' if reference else '--')
             if column >= 2:
                 evaluation = attempts[column-2]['evaluation']
-                title += (f"\nMatched {evaluation['matched']} · missed {evaluation['missed']} · extra {evaluation['extra']}"
-                          f"\nIoU ≥ {evaluation['iou_threshold']}")
+                title += f"\nMatched {evaluation['matched']} · missed {evaluation['missed']} · extra {evaluation['extra']}"
                 if evaluation['prediction_all'] == 0:
                     ax.text(.5, .5, '0 predicted nuclei', transform=ax.transAxes, ha='center',
                             bbox={'facecolor': 'white', 'alpha': .9, 'pad': 5})
@@ -400,18 +405,12 @@ def plot_postprocessing(patch, raw, variants):
         ax.imshow(shade, extent=(0, width, height, 0), interpolation='nearest')
         reference = column == 0
         _outlines(ax, labels, amb, '#00bcd4' if reference else '#ffad33', '-' if reference else '--')
-        boundary = evaluation['reference_edge_ids' if reference else 'prediction_edge_ids']
-        for identifier in boundary:
-            yy, xx = np.where((labels == identifier) & ~amb)
-            if xx.size:
-                ax.text(xx.mean()+.5, yy.mean()+.5, f'B{identifier}', fontsize=8, ha='center',
-                        bbox={'facecolor': 'white', 'alpha': .85, 'edgecolor': 'none', 'pad': 1})
         if not reference:
             title += f"\nTP {evaluation['matched']} · FP {evaluation['extra']} · FN {evaluation['missed']}"
         ax.set(title=title, xlim=(0, width), ylim=(height, 0), aspect='equal')
         ax.axis('off')
     fig.suptitle(f'Minimum object area: {minimum} input pixels · physical scale unverified\n'
-                 'B = frame-touching object; IDs are local to each mask, not cross-mask matches', y=.985)
+                 'Frame-touching objects can be protected; the raw prediction is retained', y=.985)
     fig.legend(handles=[Line2D([], [], color='#00bcd4', label='Annotated ground truth', lw=2),
                         Line2D([], [], color='#ffad33', linestyle='--', label='Prediction', lw=2),
                         Patch(facecolor='0.6', label='Ignored ambiguity')],
