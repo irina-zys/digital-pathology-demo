@@ -40,11 +40,11 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
         raise ValueError("exclude_hole_centers must be a boolean")
     if not 0 < cfg.min_tissue_fraction <= 1 or not 1 <= cfg.max_candidates <= 1_000_000:
         raise ValueError("Invalid patch coverage or grid budget")
-    if any(not isinstance(limit, int) or not 0 <= limit <= (1024 if size == 256 else 8)
+    if any(type(limit) is not int or not 0 <= limit <= (1024 if size == 256 else 8)
            for size, limit in zip(sizes, cfg.max_patches, strict=True)):
         raise ValueError("Limits: 0-1024 small patches and 0-8 optional regions for the selected slide")
     coordinate_limit = cfg.get("coordinate_limit")
-    if coordinate_limit is not None and (not isinstance(coordinate_limit, int) or
+    if coordinate_limit is not None and (type(coordinate_limit) is not int or
                                          not 1 <= coordinate_limit <= cfg.max_candidates):
         raise ValueError("coordinate_limit must be null (all eligible) or 1-max_candidates")
     target_mpp = float(cfg.target_mpp)

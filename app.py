@@ -212,11 +212,17 @@ def main():
         st.stop()
     sizes = export_sizes(manifest)
     mask_method = manifest.get("mask_method") or "Unknown"
-    mask_label = {"clam_saturation": "CLAM saturation", "tia_otsu": "TIA Otsu"}.get(mask_method, mask_method)
-    tiling_methods = {layout.get("tiling_method") for slide in manifest["slides"]
-                     for layout in slide.get("exports", {}).get("layouts", [])}
-    tiling_labels = sorted({{"clam_four_pt": "CLAM four-point contours", "coverage_grid": "retained-mask coverage grid"}.get(method, method or "not recorded") for method in tiling_methods})
-    st.caption(f"Masking: {mask_label} · Patch placement: {', '.join(tiling_labels) or 'not recorded'}")
+    mask_label = {"clam_saturation": "CLAM-style saturation", "tia_otsu": "TIA Otsu"}.get(mask_method, mask_method)
+    tiling_labels = set()
+    for slide in manifest["slides"]:
+        for layout in slide.get("exports", {}).get("layouts", []):
+            method = layout.get("tiling_method")
+            if method == "clam_four_pt":
+                label = f"CLAM contours ({layout.get('contour_fn') or 'rule not recorded'})"
+            else:
+                label = {"coverage_grid": "retained-mask coverage grid"}.get(method, method or "not recorded")
+            tiling_labels.add(label)
+    st.caption(f"Masking: {mask_label} · Patch placement: {', '.join(sorted(tiling_labels)) or 'not recorded'}")
     if any(layout.get("target_mpp") is None for slide in manifest["slides"]
            for layout in slide.get("exports", {}).get("layouts", [])):
         st.warning("This run has patch exports without a recorded target resolution. A common patch scale is not established; native scanner resolutions may differ.")

@@ -90,7 +90,8 @@ def coordinates(mask, dimensions, size, limit, min_fraction, max_candidates):
     """Existing export API: (eligible coords, fractions, count before optional cap)."""
     if not np.isfinite(min_fraction) or not 0 <= min_fraction <= 1:
         raise ValueError("min_fraction must be finite and in 0-1")
-    if limit is not None and (not isinstance(limit, (int, np.integer)) or limit < 1):
+    if limit is not None and (isinstance(limit, (bool, np.bool_))
+                              or not isinstance(limit, (int, np.integer)) or limit < 1):
         raise ValueError("limit must be None or a positive integer")
     coords = grid_coordinates(dimensions, size, max_candidates=max_candidates)
     coverage = tissue_coverage(mask, coords, dimensions, size)
@@ -194,7 +195,7 @@ def clam_coordinates(slide, mask, size, *, limit=None, min_fraction=0.6,
         raise ValueError("Unknown CLAM contour check")
     if not np.isfinite(min_fraction) or not 0 <= min_fraction <= 1:
         raise ValueError("min_fraction must be in 0-1")
-    if limit is not None and (not isinstance(limit, int) or limit < 1):
+    if limit is not None and (type(limit) is not int or limit < 1):
         raise ValueError("limit must be None or a positive integer")
     if not isinstance(max_candidates, int) or max_candidates < 1 or not isinstance(max_contours, int) or max_contours < 1:
         raise ValueError("Candidate and contour budgets must be positive integers")

@@ -54,7 +54,8 @@ def preprocess_masks(rgb, *, masking, artifacts):
                         prefilter_excluded_pixels=int(pre_excluded.sum()),
                         prefilter_excluded_fraction=float(pre_excluded.mean()),
                         tia_enabled=use_tia, tia_threshold=applied_tia,
-                        tia_threshold_mode="fitted_otsu" if tia_threshold is None else "manual",
+                        tia_threshold_mode=("disabled" if not use_tia else
+                                            "fitted_otsu" if tia_threshold is None else "manual"),
                         clam_saturation_threshold=applied_clam,
                         max_hole_area_mask_pixels=max_hole_area,
                         filled_hole_pixels=int(stages["filled_holes"].sum()),

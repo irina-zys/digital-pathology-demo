@@ -20,10 +20,17 @@ def read_feature_cache(path, *, fingerprint=None):
         if f.attrs.get('status') != 'complete' or (fingerprint and f.attrs['fingerprint'] != fingerprint):
             raise ValueError('Incomplete or incompatible feature cache')
         features, coords, indices = f['features'][:], f['coords'][:], f['indices'][:]
-        if (features.ndim != 2 or len(features) != len(coords) or len(features) != len(indices)
+        if (features.ndim != 2 or not len(features) or not features.shape[1]
+                or coords.shape != (len(features), 2) or coords.dtype.kind not in 'iu'
+                or np.any(coords < 0) or len(features) != len(indices)
+                or int(f.attrs.get('completed_rows', -1)) != len(features)
                 or not np.isfinite(features).all() or not np.array_equal(indices, np.arange(len(indices)))):
             raise ValueError('Invalid feature cache or incomplete eligible-patch coverage')
         metadata = json.loads(f.attrs['identity'])
+        if (cache_fingerprint(metadata) != f.attrs.get('fingerprint')
+                or metadata.get('indices') != indices.tolist()
+                or metadata.get('encoder', {}).get('features') != features.shape[1]):
+            raise ValueError('Feature cache identity does not match its fingerprint or arrays')
     return features, coords, metadata
 
 

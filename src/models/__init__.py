@@ -1,1 +1,1 @@
-"""Lightning models for image, bag and foreground-mask prediction."""
+"""Plain PyTorch components and pretrained model adapters."""

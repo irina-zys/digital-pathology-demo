@@ -1,5 +1,6 @@
 """Shared Trainer construction and assessed fit/evaluation execution."""
 from hydra.utils import instantiate
+from lightning.pytorch.callbacks import Timer
 from omegaconf import OmegaConf
 from src.training.callbacks import FitProgress
 
@@ -30,6 +31,11 @@ def execute_training(trainer, model, data, *, checkpoint, evaluate, test, progre
             raise RuntimeError("Training performed no new optimizer steps; increase the epoch/step budget when resuming")
         if trainer.interrupted:
             raise RuntimeError("Training interrupted; no completion manifest written")
+        for callback in trainer.callbacks:
+            if isinstance(callback, Timer):
+                remaining = callback.time_remaining("train")
+                if remaining is not None and remaining <= 0:
+                    raise RuntimeError("Training time limit reached; no completion manifest written")
         metrics = {key: float(value.detach().cpu()) for key, value in trainer.callback_metrics.items()}
         best_path = trainer.checkpoint_callback.best_model_path if trainer.checkpoint_callback else None
         if test:
