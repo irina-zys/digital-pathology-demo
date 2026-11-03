@@ -76,6 +76,7 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | --- | --- |
 | Understand Hydra and the code layout | [Hydra and project structure](docs/hydra-and-project-structure.md) |
 | Configure masking, tiling and outputs | [Preprocessing](docs/preprocessing.md) |
+| Review and share outputs through a browser | [Streamlit workflows](docs/streamlit-workflows.md) |
 | Obtain datasets and create QuPath projects | [Datasets](docs/datasets.md) |
 | Walk through metadata, masks, QC and optional stain comparisons | [Preprocessing demo](notebooks/preprocessing_demo.ipynb) |
 | Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
