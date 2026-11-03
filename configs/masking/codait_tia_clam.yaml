@@ -1,0 +1,10 @@
+# H&E default: CODAIT colour exclusions -> TIA Otsu -> CLAM-style mask -> hole cleanup.
+# CODAIT settings (including pen rule overrides) live in artifacts/*.yaml.
+method: codait_tia_clam
+tia_enabled: true
+tia_threshold: null  # null fits grayscale Otsu; a 0-255 number is a manual override.
+median_size: 7  # Odd saturation smoothing window, in thumbnail pixels.
+use_otsu: true  # CLAM-stage saturation Otsu; distinct from TIA grayscale Otsu.
+saturation_threshold: 20  # Used only when use_otsu=false; 0-255.
+closing_size: 3  # 0 disables closing; kernel edge in thumbnail pixels.
+max_hole_area: 16  # Fill enclosed holes <= this area; 0 disables. Larger holes stay.

@@ -1,7 +1,14 @@
-# Bounded native-level-0 exports; no magnification harmonisation or embeddings.
+# All eligible calibrated coordinates; bounded source-pixel reads for one WSI.
 enabled: true
-patch_sizes: [256, 4096]
-max_patches: [128, 2]
+tiling_method: clam_four_pt  # Actual pinned upstream CLAM, followed by retained-mask coverage QC.
+contour_fn: four_pt  # four_pt, four_pt_hard, center or basic.
+max_contours: 128  # Bound CLAM's per-contour worker pools (at most four workers each).
+patch_sizes: [256]  # Output pixels at target_mpp.
+target_mpp: 0.5  # Physical calibration; approximately the conventional 20x scale.
+max_patch_read_pixels: 100000000  # Per native source rectangle before resizing.
+coordinate_limit: null  # All eligible coordinates; an integer explicitly subsamples.
+pixel_slide_id: null  # Set one exact WSI filename stem to save source-pixel patches.
+max_patches: [128]  # Selected slide only; 256px PNGs, 0 disables.
 min_tissue_fraction: 0.6
 max_candidates: 200000
-save_region_tar: true
+save_region_tar: false

@@ -1,0 +1,6 @@
+defaults:
+  - preprocess
+  - override data: kpmp
+  - override masking: clam_saturation  # Preserve the established multi-stain recipe.
+  - override artifacts: kidney_multistain
+  - _self_

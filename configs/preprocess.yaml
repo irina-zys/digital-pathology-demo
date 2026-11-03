@@ -1,7 +1,7 @@
 defaults:
   - _self_
   - data: demo
-  - masking: tia_otsu
+  - masking: codait_tia_clam
   - artifacts: default
   - export: clam_hipt
   - optional local: default
@@ -12,6 +12,8 @@ thumbnail:
   max_total_read_pixels: 100000000
 
 hydra:
+  # Keep provenance even when an attempted rerun is refused by the output guard.
+  output_subdir: .hydra/${now:%Y-%m-%d_%H-%M-%S-%f}
   run:
     dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S-%f}
   job:

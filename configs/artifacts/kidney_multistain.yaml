@@ -1,0 +1,8 @@
+# Preserve special-stain colours: trichrome/silver are not H&E pen artefacts.
+pen_colors: []
+remove_dark: false
+dark_threshold: 30
+remove_gray: false
+gray_tolerance: 15
+min_tissue_area: 0
+warn_removed_fraction: 0.25

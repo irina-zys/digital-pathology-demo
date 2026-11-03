@@ -1,5 +1,9 @@
 # Heuristics for H&E previews; review excluded pixels before downstream use.
-pen_colors: [red, green, blue]
+pen_colors: [red, green, blue]  # [] disables all pen exclusion.
+pen_thresholds: null  # Per-colour RGB rule lists; null uses the published CODAIT defaults.
+# Override example: {blue: [[60, 120, 190]]}; replaces ALL blue rules.
+# Red: R>r,G<g,B<b; green: R<r,G>g,B>b; blue: R<r,G<g,B>b.
+# Rules within a colour are OR'ed. Omitted colours retain their default rules.
 remove_dark: true
 dark_threshold: 30
 remove_gray: false
