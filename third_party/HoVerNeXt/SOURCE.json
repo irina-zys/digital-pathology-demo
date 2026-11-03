@@ -1,0 +1,25 @@
+{
+  "repository": "https://github.com/digitalpathologybern/hover_next_inference",
+  "commit": "bde3c9d96172d16513e292d0a2dfcd7ff80202ff",
+  "license": "GPL-3.0",
+  "upstream_files_sha256": {
+    "src/multi_head_unet.py": "4111fae5bd3f082d66ba7379bf9dea23a5f33f854a3d16e156883debf88d0fae",
+    "src/constants.py": "d070d0dce4332422df5b4c285777578793a2e7178c52a5e54909d771f2f0fa72",
+    "src/post_process_utils.py": "1f9fd02a18aa2c41a731efcc2f5b6bdefe94014ade8a151bd08933122a76738c",
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "local_files_sha256": {
+    "multi_head_unet.py": "4111fae5bd3f082d66ba7379bf9dea23a5f33f854a3d16e156883debf88d0fae",
+    "constants.py": "d070d0dce4332422df5b4c285777578793a2e7178c52a5e54909d771f2f0fa72",
+    "postprocess.py": "5f0c6d8e93178c855cc275d111a1bde0ffc308ab30096b4da92dafb7bd528a2c",
+    "LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+  },
+  "unmodified": [
+    "multi_head_unet.py",
+    "constants.py",
+    "LICENSE"
+  ],
+  "adaptations": {
+    "postprocess.py": "Selected faster_instance_seg, post_proc_inst, make_ct, remove_obj_cls, remove_small_holescv2 verbatim; changed the single zarr.zeros instance array to numpy.zeros and removed its compressor argument. Imports narrowed to NumPy/OpenCV/SciPy/scikit-image/gc; no CUDA, image loading, Zarr I/O or multiprocessing."
+  }
+}
