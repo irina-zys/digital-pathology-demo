@@ -2,5 +2,6 @@
 defaults:
   - finetune_resnet50
 model:
-  encoder:
-    pretrained: false
+  net:
+    encoder:
+      pretrained: false

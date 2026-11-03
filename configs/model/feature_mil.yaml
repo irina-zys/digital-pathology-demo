@@ -1,6 +1,13 @@
-_target_: src.models.feature_mil.FeatureMILClassifier
-input_dim: ${data.input_dim}
-class_names: ${class_names}
-attention_dim: 128
-lr: 0.001
-weight_decay: 0.0001
+defaults:
+  - pooling@net.pooling: attention
+  - loss: cross_entropy
+  - optimizer: adamw
+  - _self_
+
+_target_: src.lightning.classification.ClassificationModule
+net:
+  _target_: src.models.networks.classification.MILHead
+  input_dim: ${data.input_dim}
+  class_names: ${class_names}
+optimizer:
+  lr: 0.001

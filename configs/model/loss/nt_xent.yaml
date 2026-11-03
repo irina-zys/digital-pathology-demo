@@ -1,0 +1,2 @@
+_target_: src.models.losses.contrastive.NTXent
+temperature: 0.2

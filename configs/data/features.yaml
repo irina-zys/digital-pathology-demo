@@ -1,4 +1,4 @@
-_target_: src.data.feature_datamodule.FeatureBagDataModule
+_target_: src.data.datamodules.features.FeatureBagDataModule
 manifest: ???
 data_root: .
 task: mil

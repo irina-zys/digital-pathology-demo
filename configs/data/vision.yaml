@@ -1,4 +1,4 @@
-_target_: src.data.vision.VisionDataModule
+_target_: src.data.datamodules.patches.PatchDataModule
 manifest: ???
 data_root: .
 task: classification

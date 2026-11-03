@@ -2,7 +2,8 @@
 defaults:
   - finetune_resnet50
 model:
-  encoder:
-    pretrained: false
-    source_checkpoint: ???
-    source_checkpoint_sha256: ???
+  net:
+    encoder:
+      pretrained: false
+      source_checkpoint: ???
+      source_checkpoint_sha256: ???

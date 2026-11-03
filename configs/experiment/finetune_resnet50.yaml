@@ -2,20 +2,22 @@
 defaults:
   - override /data: wsi
   - override /model: classifier
+  - override /model/pooling@model.net.pooling: mean
 data:
   max_patches_per_bag: 2 # Explicit mini-bags for the brief learning-mechanics notebook.
   augment: false
 model:
-  pooling: mean
-  encoder:
-    name: resnet50
-    pretrained: true
-    freeze: false
-    local_project: ${data.data_root}
-    freeze_norm_stats: true
-    source_checkpoint: null
-    source_checkpoint_sha256: null
-  lr: 0.00001
+  net:
+    encoder:
+      name: resnet50
+      pretrained: true
+      freeze: false
+      local_project: ${data.data_root}
+      freeze_norm_stats: true
+      source_checkpoint: null
+      source_checkpoint_sha256: null
+  optimizer:
+    lr: 0.00001
 trainer:
   max_epochs: 2
   max_time: '00:00:05:00'

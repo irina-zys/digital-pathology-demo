@@ -1,0 +1,3 @@
+_target_: src.models.pooling.attention.AttentionPooling
+_partial_: true
+attention_dim: 128

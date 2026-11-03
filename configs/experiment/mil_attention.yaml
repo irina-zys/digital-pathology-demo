@@ -1,6 +1,6 @@
 # @package _global_
+defaults:
+  - override /model/pooling@model.net.pooling: attention
 data:
   task: mil
   batch_size: 1
-model:
-  pooling: attention

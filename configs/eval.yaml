@@ -1,5 +1,6 @@
 defaults:
   - train
   - _self_
+stage: test
 ckpt_path: ???
 test: true

@@ -1,5 +1,5 @@
 # Existing coordinate exports are read directly; no patch PNGs are written.
-_target_: src.data.wsi.WSIBagDataModule
+_target_: src.data.datamodules.wsi.WSIBagDataModule
 manifest: ???
 data_root: .
 task: mil

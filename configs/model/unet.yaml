@@ -1,5 +1,12 @@
-_target_: src.models.vision.UNet
-base_channels: 16
+defaults:
+  - loss: valid_pixel_bce
+  - optimizer: adamw
+  - _self_
+
+_target_: src.lightning.segmentation.SegmentationModule
+net:
+  _target_: src.models.networks.unet.UNet
+  base_channels: 16
 threshold: 0.5
-lr: 0.001
-weight_decay: 0.0001
+optimizer:
+  lr: 0.001

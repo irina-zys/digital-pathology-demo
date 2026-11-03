@@ -1,10 +1,11 @@
-_target_: src.models.vision.Classifier
-class_names: ${class_names}
-encoder:
-  name: resnet18
-  pretrained: false
-  freeze: false
-pooling: null
-attention_dim: 128
-lr: 0.0001
-weight_decay: 0.0001
+defaults:
+  - encoder@net.encoder: resnet18
+  - pooling@net.pooling: null
+  - loss: cross_entropy
+  - optimizer: adamw
+  - _self_
+
+_target_: src.lightning.classification.ClassificationModule
+net:
+  _target_: src.models.networks.classification.ImageClassifier
+  class_names: ${class_names}

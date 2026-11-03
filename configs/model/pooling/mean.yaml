@@ -1,0 +1,2 @@
+_target_: src.models.pooling.mean.MeanPooling
+_partial_: true

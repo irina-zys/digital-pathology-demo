@@ -1,4 +1,4 @@
-_target_: src.data.wsi_ssl.WSIContrastiveDataModule
+_target_: src.data.datamodules.contrastive.WSIContrastiveDataModule
 manifest: ???
 data_root: .
 task: self_supervised
