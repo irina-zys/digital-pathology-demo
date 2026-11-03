@@ -6,11 +6,11 @@ from pathlib import Path
 from hydra import compose, initialize_config_dir
 from omegaconf import OmegaConf
 
-from src.train import run
+from src.runners.train import run
 
 
 def run_recipe(project, experiment, manifest, output, *, overrides=(), device='cpu', test=False):
-    """Notebooks and scripts use the same experiment groups as python -m src.train."""
+    """Notebooks and scripts use the same experiment groups as python -m src.runners.train."""
     project, output = Path(project).resolve(), Path(output).resolve()
     values = [f'experiment={experiment}', f'data.manifest={json.dumps(str(Path(manifest).resolve()))}',
         f'data.data_root={json.dumps(str(project))}', 'class_names=[LUAD,LUSC]', 'num_threads=2',

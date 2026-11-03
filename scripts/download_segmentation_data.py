@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 def main():
-    from src.segmentation_data import DATASETS, prepare_dataset
+    from src.data.preparation.segmentation import DATASETS, prepare_dataset
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=tuple(DATASETS), required=True)

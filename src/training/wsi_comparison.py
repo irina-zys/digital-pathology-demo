@@ -7,9 +7,9 @@ import time
 
 import torch
 
-from src.data.feature_bags import cache_slide_features
+from src.inference.feature_extraction import cache_slide_features, load_comparison_encoder
 from src.interpretation.mil import interpret_slide
-from src.models.pretrained_encoders import load_pretrained_encoder, sha256
+from src.utils.files import source_hashes
 from src.training.feature_mil import train_feature_mil
 from src.training.history import plot_learning_curves
 
@@ -30,7 +30,7 @@ def run_comparison(items, project, output, cache_root, *, models=('uni', 'dino',
     try:
         for name in models:
             print('ENCODER', name, flush=True)
-            encoder = load_pretrained_encoder(name, project, device=device, allow_download=False)
+            encoder = load_comparison_encoder(name, project, device=device, allow_download=False)
             paths = [cache_slide_features(item, encoder, cache_root,
                 batch_size=uni_batch_size if name == 'uni' else batch_size, max_seconds=max_slide_seconds) for item in items]
             head, bags, result = train_feature_mil(items, paths, output/name, project=project, class_names=class_names,
@@ -59,10 +59,7 @@ def run_comparison(items, project, output, cache_root, *, models=('uni', 'dino',
                    'all_eligible_patches_per_model': sum(i['eligible_patches'] for i in items),
                    'same_bags_and_splits': True, 'class_names': list(class_names), 'seed': seed,
                    'elapsed_seconds': time.monotonic()-start,
-                   'source_code_sha256': {name: sha256(project/name) for name in (
-                       'src/models/pretrained_encoders.py', 'src/models/feature_mil.py', 'src/data/feature_bags.py',
-                       'src/training/feature_mil.py', 'src/training/wsi_comparison.py', 'src/training/recipes.py',
-                       'src/train.py', 'src/data/feature_datamodule.py', 'src/interpretation/mil.py')},
+                   'source_code_sha256': source_hashes(project),
                    'scope': 'Ten-patient teaching comparison, frozen encoders with trained slide heads; not zero-shot'}
         (output/'comparison_receipt.json').write_text(json.dumps(receipt, indent=2, allow_nan=False))
     except Exception as error:

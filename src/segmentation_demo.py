@@ -14,11 +14,14 @@ import numpy as np
 from PIL import Image
 import tifffile
 
-from src.annotations import coco_samples, convert_annotations, rasterize, read_mask, mask_objects
-from src.pretrained import CELLPOSE_SHA256, checkpoint_sha256, load_hovernext, predict_hovernext, run_cellpose_patch
-from src.metrics import compare_instances, comparison_row
-from src.postprocessing import filter_small_instances
-from src.cellpose_worker import SIZE_CHECKPOINT_NAME, SIZE_CHECKPOINT_BYTES, SIZE_CHECKPOINT_SHA256
+from src.data.annotations import coco_samples, convert_annotations, rasterize, read_mask, mask_objects
+from src.models.pretrained.assets import CELLPOSE_SHA256
+from src.utils.files import sha256 as checkpoint_sha256, source_hashes
+from src.models.pretrained.hovernext import load_hovernext, predict_hovernext
+from src.models.pretrained.cellpose import run_cellpose_patch
+from src.evaluation.metrics import compare_instances, comparison_row
+from src.imaging_utils.postprocessing import filter_small_instances
+from src.models.pretrained.cellpose_worker import SIZE_CHECKPOINT_NAME, SIZE_CHECKPOINT_BYTES, SIZE_CHECKPOINT_SHA256
 
 
 def _json(path, value):
@@ -239,10 +242,7 @@ def export_demo(demo):
                'postprocessing': demo.get('postprocessing', []),
                'uni': 'not part of the segmentation walkthrough; see encoder documentation',
                'elapsed_seconds': time.monotonic()-demo['started'],
-               'source_code_sha256': {name: checkpoint_sha256(demo['project']/name) for name in
-                   ('src/annotations.py', 'src/metrics/detection.py', 'src/metrics/segmentation.py',
-                    'src/metrics/__init__.py', 'src/segmentation_demo.py', 'src/postprocessing.py',
-                    'src/pretrained.py', 'src/hovernext.py', 'src/cellpose_worker.py')}}
+               'source_code_sha256': source_hashes(demo['project'])}
     _json(report/'run_receipt.json', receipt)
     import pandas as pd
     pd.DataFrame([{'attempt': str(a['directory'].relative_to(demo['out'])),

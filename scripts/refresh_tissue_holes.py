@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from src.image_utils import save_png, tissue_hole_preview
+from src.imaging_utils.arrays import save_png, tissue_hole_preview
 
 
 SEMANTICS = "retained_tissue_green_hole_blue_contours_4_connected_thumbnail"

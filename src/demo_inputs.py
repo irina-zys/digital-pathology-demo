@@ -12,28 +12,24 @@ from pathlib import Path
 import subprocess
 import sys
 
+from src.models.pretrained.assets import (
+    HOVER_NAME, HOVER_FILES, CELLPOSE_SIZE, CELLPOSE_SHA256,
+    CELLPOSE_SIZE_MODEL_NAME, CELLPOSE_SIZE_MODEL_BYTES, CELLPOSE_SIZE_MODEL_SHA256,
+    DINO_REVISION, DINO_SHA256, DINO_SIZE,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PREPROCESSING_IDS = ("20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b", "5048c79f-ed1d-4534-8da2-1a4d207b2371")
-DINO_REVISION = "10e440b8a34dfd657a90f2fcaa988c6b6a2f0da4"
-DINO_SHA256 = "8d4795b8e4e327c6d841e15a2e3e6d88c45346256a43f8cdae8c26d92c806f7a"
 DINO_FOLDER = "data/models/huggingface/hub/models--timm--vit_small_patch16_224.dino"
 MODEL_FILES = {
-    "hovernext": [
-        ("data/models/hovernext/pannuke_convnextv2_tiny_1/params.toml", 1106,
-         "ae6ac1a2ed23e89a935a863a647978ebb3d4c84eea02ca070ca91f304125c84c"),
-        ("data/models/hovernext/pannuke_convnextv2_tiny_1/pannuke_test_param_dict.json", 458,
-         "2032d371e0c17c179f31f459696e2d5a08fa0928bc4b47bb932e7cd843b73cc3"),
-        ("data/models/hovernext/pannuke_convnextv2_tiny_1/train/best_model", 144433761,
-         "0c75821cfc2a0a49f7f75ebb57a4e4842f9ddd67798841180a6e3d8091261ed0"),
-    ],
+    "hovernext": [(f"data/models/hovernext/{HOVER_NAME}/{name}", size, digest)
+                  for name, (size, digest) in HOVER_FILES.items()],
     "cellpose": [
-        ("data/models/cellpose/nucleitorch_0", 26563614,
-         "89ca45e4a45048d5010d29621466b1274b91b3dcb9714dce9f9e90a9a8671303"),
-        ("data/models/cellpose/size_nucleitorch_0.npy", 3627,
-         "a79107c9f284b569dd65f3a7363014d613a3403241c062822f07b6f026b4d3ef"),
+        ("data/models/cellpose/nucleitorch_0", CELLPOSE_SIZE, CELLPOSE_SHA256),
+        (f"data/models/cellpose/{CELLPOSE_SIZE_MODEL_NAME}", CELLPOSE_SIZE_MODEL_BYTES, CELLPOSE_SIZE_MODEL_SHA256),
     ],
-    "dino": [(f"{DINO_FOLDER}/snapshots/{DINO_REVISION}/model.safetensors", 86676340, DINO_SHA256)],
+    "dino": [(f"{DINO_FOLDER}/snapshots/{DINO_REVISION}/model.safetensors", DINO_SIZE, DINO_SHA256)],
 }
 SEGMENTATION_FILES = {
     "cytonuke": [("data/cytonuke/extracted/coco.json", 64_000_000),
@@ -213,7 +209,7 @@ def prepare_demo_inputs(demo, *, check_only=False, prepare_coordinates=False, pr
                 elif not prepare_coordinates:
                     raise FileNotFoundError("Coordinate run missing; use --prepare-coordinates with a fresh --preprocessing-run path")
                 else:
-                    _run(["-m", "src.preprocess", "--config-name", "lung", "data.max_slides=10", "export.pixel_slide_id=null",
+                    _run(["-m", "src.wsi_preprocessing.preprocess", "--config-name", "lung", "data.max_slides=10", "export.pixel_slide_id=null",
                           "export.max_patches=[0]", f"hydra.run.dir={json.dumps(str(path))}"], receipt, timeout=1800)
                     _run([ROOT / "scripts/verify_run.py", path], receipt, timeout=300)
             if path.exists():

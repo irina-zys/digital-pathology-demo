@@ -13,11 +13,11 @@ class EncoderUpdateAudit(L.Callback):
         self.expect_update = expect_update
 
     def on_train_start(self, trainer, pl_module):
-        self.name, parameter = next(pl_module.encoder.named_parameters())
+        self.name, parameter = next(pl_module.net.encoder.named_parameters())
         self.before = parameter.detach().cpu().clone()
 
     def on_fit_end(self, trainer, pl_module):
-        parameter = dict(pl_module.encoder.named_parameters())[self.name].detach().cpu()
+        parameter = dict(pl_module.net.encoder.named_parameters())[self.name].detach().cpu()
         delta = float(torch.linalg.vector_norm(parameter-self.before))
         if not torch.isfinite(parameter).all() or (delta > 0) != self.expect_update:
             raise RuntimeError('Encoder update witness disagrees with the training recipe')
@@ -26,3 +26,11 @@ class EncoderUpdateAudit(L.Callback):
                   'after_sha256': hashlib.sha256(parameter.numpy().tobytes()).hexdigest(),
                   'scope': 'one actual encoder parameter, not only the classifier head'}
         (Path(trainer.default_root_dir)/'encoder_update_audit.json').write_text(json.dumps(result, indent=2))
+
+
+class FitProgress(L.Callback):
+    """Count this invocation's updates after Lightning restores checkpoint state."""
+    initial_step = None
+
+    def on_train_start(self, trainer, pl_module):
+        self.initial_step = trainer.global_step

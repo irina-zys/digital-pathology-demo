@@ -6,11 +6,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from hydra.utils import instantiate
-from omegaconf import OmegaConf
+from src.models.loading import restore_model
 
-from src.data.feature_bags import read_feature_cache
-from src.models.pretrained_encoders import sha256
+from src.data.feature_cache import read_feature_cache
+from src.utils.files import sha256
 from src.training.history import read_epoch_history
 from src.training.recipes import run_recipe
 
@@ -18,7 +17,7 @@ from src.training.recipes import run_recipe
 def train_feature_mil(items, cache_paths, output, *, project, class_names=('LUAD', 'LUSC'), seed=42,
                       epochs=20, lr=.001, weight_decay=.0001, attention_dim=128,
                       device='cpu', max_seconds=600):
-    """Compose mil_features and call src.train.run; no separate optimizer loop."""
+    """Compose mil_features and call src.runners.train.run; no separate optimizer loop."""
     output = Path(output)
     output.mkdir(parents=True, exist_ok=False)
     rows, identities = [], []
@@ -43,7 +42,7 @@ def train_feature_mil(items, cache_paths, output, *, project, class_names=('LUAD
     minutes, seconds = divmod(remainder, 60)
     cfg, fitted = run_recipe(project, 'mil_features', manifest, output/'fit', device=device, test=True, overrides=[
         f'seed={seed}', f'data.input_dim={metadata["features"]}', f'data.encoder_sha256={metadata["checkpoint_sha256"]}',
-        f'model.attention_dim={attention_dim}', f'model.lr={lr}', f'model.weight_decay={weight_decay}',
+        f'model.net.pooling.attention_dim={attention_dim}', f'model.optimizer.lr={lr}', f'model.optimizer.weight_decay={weight_decay}',
         f'trainer.max_epochs={epochs}', f'trainer.max_time=00:{hours:02d}:{minutes:02d}:{seconds:02d}'])
     files = list((output/'fit/csv').glob('version_*/metrics.csv'))
     if len(files) != 1:
@@ -52,10 +51,8 @@ def train_feature_mil(items, cache_paths, output, *, project, class_names=('LUAD
     if len(history) != epochs or fitted['optimizer_steps_this_run'] != epochs*sum(r['split']=='train' for r in rows):
         raise RuntimeError('Training did not complete the requested budget')
     checkpoint = Path(fitted['checkpoint'])
-    state = torch.load(checkpoint, map_location='cpu', weights_only=False)  # Trusted checkpoint from this invocation.
-    model = instantiate(OmegaConf.to_container(cfg.model, resolve=True), _convert_='all')
-    model.load_state_dict(state['state_dict'], strict=True)
-    head = model.network.to(device).eval()
+    model, state = restore_model(cfg.model, checkpoint, data_contract=fitted['data_contract'])
+    head = model.net.to(device).eval()
     predictions, bags = [], []
     for item, path in zip(items, cache_paths, strict=True):
         features, _, _ = read_feature_cache(path)
@@ -64,7 +61,7 @@ def train_feature_mil(items, cache_paths, output, *, project, class_names=('LUAD
         bags.append(bag)
         if row['split'] == 'test':
             with torch.inference_mode():
-                logits, _ = head(bag['features'])
+                logits, _ = head.forward_with_attention(bag['features'])
                 scores = logits.softmax(1)[0].cpu().tolist()
             predictions.append({'slide_id': row['bag_id'], 'patient_id': row['group_id'], 'label': int(row['label']),
                                 'predicted_label': int(np.argmax(scores)), 'probabilities': scores, 'patches': len(features)})
@@ -82,7 +79,7 @@ def train_feature_mil(items, cache_paths, output, *, project, class_names=('LUAD
         'inputs': [{'slide_id': r['bag_id'], 'patient_id': r['group_id'], 'split': r['split'],
                     'label': int(r['label']), 'patches': r['eligible_patches'], 'cache': r['cache_path'],
                     'cache_sha256': r['cache_sha256']} for r in rows],
-        'all_eligible_patches_used': True, 'device': device, 'entrypoint': 'src.train.run',
+        'all_eligible_patches_used': True, 'device': device, 'entrypoint': 'src.runners.train.run',
         'experiment': 'mil_features', 'interpretation': 'Ten-patient teaching comparison; not a model ranking'}
     (output/'result.json').write_text(json.dumps(result, indent=2, allow_nan=False))
     return head, bags, result

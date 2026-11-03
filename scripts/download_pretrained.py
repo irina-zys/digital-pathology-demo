@@ -7,39 +7,39 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 import urllib.request
 import zipfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MODELS = ROOT / "data/models"
-HOVER_NAME = "pannuke_convnextv2_tiny_1"
-HOVER_URL = f"https://zenodo.org/records/10635618/files/{HOVER_NAME}.zip"
-HOVER_SIZE = 133721861
-HOVER_MD5 = "331ce1f821b57e69e598473cc4f71769"
-HOVER_SHA256 = "fc92a7807e21ad73f18dc7b41c9c13674a53383cb383561e9b2481f74a2578fa"
-HOVER_FILES = {
-    "params.toml": (1106, "ae6ac1a2ed23e89a935a863a647978ebb3d4c84eea02ca070ca91f304125c84c"),
-    "pannuke_test_param_dict.json": (458, "2032d371e0c17c179f31f459696e2d5a08fa0928bc4b47bb932e7cd843b73cc3"),
-    "train/best_model": (144433761, "0c75821cfc2a0a49f7f75ebb57a4e4842f9ddd67798841180a6e3d8091261ed0"),
-}
-CELLPOSE_URL = "https://www.cellpose.org/models/nucleitorch_0"
-CELLPOSE_SIZE = 26563614
-CELLPOSE_SHA256 = "89ca45e4a45048d5010d29621466b1274b91b3dcb9714dce9f9e90a9a8671303"
-CELLPOSE_SIZE_MODEL_NAME = "size_nucleitorch_0.npy"
-CELLPOSE_SIZE_MODEL_URL = f"https://www.cellpose.org/models/{CELLPOSE_SIZE_MODEL_NAME}"
-CELLPOSE_SIZE_MODEL_BYTES = 3627
-CELLPOSE_SIZE_MODEL_SHA256 = "a79107c9f284b569dd65f3a7363014d613a3403241c062822f07b6f026b4d3ef"
-# Original UNI pins match src.pretrained; they identify UNI, not UNI2.
-UNI_REPO = "MahmoodLab/UNI"
-UNI_REVISION = "b55a5ec6cade1a39edfe6534189a9b8ca7a022f0"
-UNI_FILE = "pytorch_model.bin"
-UNI_SIZE = 1213527781
-UNI_SHA256 = "56ef09b44a25dc5c7eedc55551b3d47bcd17659a7a33837cf9abc9ec4e2ffb40"
-DINO_REPO = "timm/vit_small_patch16_224.dino"
-DINO_REVISION = "10e440b8a34dfd657a90f2fcaa988c6b6a2f0da4"
-DINO_SIZE = 86676340
-DINO_SHA256 = "8d4795b8e4e327c6d841e15a2e3e6d88c45346256a43f8cdae8c26d92c806f7a"
+sys.path.insert(0, str(ROOT))
+
+from src.models.pretrained.assets import (  # noqa: E402
+    HOVER_NAME,
+    HOVER_URL,
+    HOVER_SIZE,
+    HOVER_MD5,
+    HOVER_SHA256,
+    HOVER_FILES,
+    CELLPOSE_URL,
+    CELLPOSE_SIZE,
+    CELLPOSE_SHA256,
+    CELLPOSE_SIZE_MODEL_NAME,
+    CELLPOSE_SIZE_MODEL_URL,
+    CELLPOSE_SIZE_MODEL_BYTES,
+    CELLPOSE_SIZE_MODEL_SHA256,
+    UNI_REPO,
+    UNI_REVISION,
+    UNI_FILE,
+    UNI_SIZE,
+    UNI_SHA256,
+    DINO_REPO,
+    DINO_REVISION,
+    DINO_SIZE,
+    DINO_SHA256,
+)
 
 
 def canonical(path):

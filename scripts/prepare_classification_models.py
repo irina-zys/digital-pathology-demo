@@ -8,7 +8,7 @@ import sys
 PROJECT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT))
 
-from src.models.pretrained_encoders import prepare_encoder_assets  # noqa: E402
+from src.models.pretrained.assets import prepare_encoder_assets  # noqa: E402
 
 
 def main():

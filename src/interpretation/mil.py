@@ -8,8 +8,8 @@ import openslide
 from PIL import Image
 import torch
 
-from src.data.feature_bags import read_feature_cache
-from src.tiling import read_tile
+from src.data.feature_cache import read_feature_cache
+from src.wsi_preprocessing.tiling import read_tile
 
 
 def patch_saliency(head, loaded, cached_features, index, rgb, *, class_index):
@@ -85,7 +85,7 @@ def interpret_slide(item, cache_path, head, loaded, output, *, class_names=('LUA
     tensor = torch.from_numpy(features).to(loaded['device'])
     head = head.to(loaded['device']).eval()
     with torch.inference_mode():
-        logits, weights = head(tensor)
+        logits, weights = head.forward_with_attention(tensor)
         attention = weights.cpu().numpy()
         target = int(logits.argmax(1).item())
         probabilities = logits.softmax(1)[0].cpu().tolist()
