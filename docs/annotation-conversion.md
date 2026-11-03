@@ -1,6 +1,6 @@
 # Annotation conversion
 
-For a bounded walkthrough followed by pretrained nuclei inference, open the
+For a bounded prediction/error walkthrough with a conversion appendix, open the
 [annotation and segmentation demo](../notebooks/annotation_segmentation_demo.ipynb)
 and follow its [model setup](pretrained-models.md).
 

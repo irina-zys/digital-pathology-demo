@@ -26,6 +26,7 @@ so synchronization retains Lightning.
 | `dino` | Patch classification | Frozen pretrained DINO ViT-S/16 |
 | `mil_dino_mean` | Bag classification | Frozen pretrained DINO ViT-S/16 / mean |
 | `mil_dino_attention` | Bag classification | Frozen pretrained DINO ViT-S/16 / attention |
+| `mil_dino_learning_curve` | Bag classification | Same encoder/head; 20 measured epochs, fixed inputs |
 
 ResNet initializes randomly by default. Set `model.encoder.pretrained=true` to
 request ImageNet weights or `model.encoder.name=resnet50` to change its size.
@@ -157,61 +158,115 @@ and uses the best checkpoint, not arbitrary final weights. During model selectio
 leave the test set untouched. Accuracy is micro accuracy across images or bags;
 neither patch metrics nor bag metrics automatically become patient-level metrics.
 
-## WSI classification notebook
+## Pretrained classification and learning recipes
 
-[WSI classification demo](../notebooks/wsi_classification_demo.ipynb) uses the ten
-local TCGA-LUAD/LUSC slides, with six training patients, two validation patients
-and two held-out patients. Each split contains both classes. This is a fixed,
-seeded teaching split, not an official TCGA benchmark or a performance estimate.
+The [WSI classification notebook](../notebooks/wsi_classification_demo.ipynb)
+compares frozen original UNI, ImageNet DINO ViT-S/16 and ImageNet ResNet-50 with
+trained attention pooling and slide classifiers. It uses **every eligible
+coordinate** in the chosen export, sharing the fixed patient split and label
+order across encoders. Frozen UNI plus a trained classifier is transfer learning,
+not zero-shot diagnosis classification.
 
-The `data=wsi` profile selects `src.data.wsi.WSIBagDataModule`. Its CSV requires
-`wsi_path,coords_path,split,group_id,label,bag_id`, with paths relative to
-`data.data_root`. It validates patient separation, slide identity, HDF5 geometry,
-calibration and file-change guards. It reads eight evenly indexed tissue
-coordinates per slide directly through OpenSlide; no patch PNGs or WSI copies
-are written. Each native footprint becomes a 256-pixel tile at target 0.5 µm/pixel,
-then the explicit DINO transform resizes it to 224 pixels. The exact coordinates,
-recorded tissue fractions, effective MPP and source metadata are saved.
+The separate [brief learning notebook](../notebooks/representation_learning_demo.ipynb)
+shows a SimCLR-style pretraining objective, actual encoder fine-tuning, and
+random initialization. Its two-patch slide mini-bags and short epoch budgets are
+explicit teaching bounds, distinct from the full-coordinate classification run.
+No test-slide pixels enter that brief notebook. Individual patches do not acquire
+invented diagnosis annotations: supervised updates use pooled slide mini-bags.
 
-The default local input is `outputs/tcga-mpp05/manifest.json`, a historical
-`clam_saturation`/CLAM-style export. The notebook records its actual schema and
-masking/tiling methods. It does not claim those slides were rerun through the
-newer default pipeline. With downloaded TCGA slides, a fresh preprocessing run
-can instead be created using:
+Both use the repository's `src.train.run` / `python -m src.train` entrypoint,
+Lightning modules/data modules, callbacks, CSV logging and Hydra experiment
+composition. This follows the
+[Lightning-Hydra-Template organization](https://github.com/ashleve/lightning-hydra-template)
+and its [experiment override pattern](https://github.com/ashleve/lightning-hydra-template/blob/main/configs/experiment/example.yaml).
+No second optimizer loop is implemented in notebooks.
+
+| Experiment | Model/data components | Learning behavior |
+| --- | --- | --- |
+| `mil_features` | `FeatureMILClassifier` / `FeatureBagDataModule` | Frozen cached features; all eligible patches; attention and slide head learn |
+| `simclr_wsi` | `SimCLR` / `WSIContrastiveDataModule` | Random ResNet50, paired augmented views, NT-Xent; no diagnosis loss |
+| `finetune_dino` | `Classifier` / `WSIBagDataModule` | Verified local ImageNet DINO; encoder and mean-pooled slide head learn |
+| `finetune_resnet50` | Same interfaces | Verified ImageNet ResNet50; encoder and slide head learn |
+| `scratch_vit`, `scratch_resnet50` | Same interfaces | Matched supervised recipes with random encoder initialization |
+| `finetune_local_ssl` | Same interfaces | Strict transfer of encoder weights from a checksum-bound local SimCLR checkpoint |
+
+The relevant owners are `src/models`, `src/data`, `configs/model`, `configs/data`
+and `configs/experiment`. `src/training/recipes.py` only composes configuration and
+calls the shared entrypoint. `EncoderUpdateAudit` records an actual encoder
+parameter before/after fitting, so head-only training is not mislabeled fine-tuning.
+Normalization running statistics stay fixed during the short supervised mini-bag
+recipes; encoder parameters still receive gradients. The SSL projection head is
+not transferred to the supervised classifier.
+
+For example, using a patient-separated WSI manifest prepared by the notebook:
 
 ```sh
-uv run --locked python -m src.preprocess data=tcga \
-  export.pixel_slide_id=null hydra.run.dir=outputs/tcga-classification-preprocessing
+uv run --locked --extra train python -m src.train experiment=simclr_wsi \
+  data.manifest=/path/to/wsi_splits.csv data.data_root=. \
+  'class_names=[LUAD,LUSC]'
+
+uv run --locked --extra train python -m src.train experiment=finetune_dino \
+  data.manifest=/path/to/wsi_splits.csv data.data_root=. \
+  'class_names=[LUAD,LUSC]'
 ```
 
-Set the notebook's preprocessing-run path to that directory. Require complete
-eligible 256-pixel coordinate exports at the configured MPP; capped previews,
-missing files and mismatched calibration are rejected.
+Feature MIL takes the generated **feature manifest**, with cache checksums,
+eligible counts, encoder checksum and dimensionality, rather than raw WSI rows.
+`configs/wsi_comparison.yaml` configures the matched encoder comparison; each
+model fit composes `experiment=mil_features`. Data, model and label contracts are
+saved and checked during checkpoint reload. Interrupted budgets are not reported
+as completed comparisons.
 
-Use the main environment with the `train` extra. The notebook verifies a local
-DINO checkpoint and runs Hugging Face offline. Its canonical cache is
-`data/models/huggingface/`. On a new checkout, acquire the public weights explicitly
-before running the notebook:
+### Encoder assets and complete feature coverage
 
 ```sh
-HF_HOME="$PWD/data/models/huggingface" uv run --locked --extra train python -c \
-  'from huggingface_hub import hf_hub_download; hf_hub_download("timm/vit_small_patch16_224.dino", "model.safetensors", revision="main")'
+# First obtain provider approval for UNI and sign in locally; no token in source.
+.venv/bin/hf auth login
+.venv/bin/python scripts/prepare_classification_models.py
 ```
 
-The notebook checks revision `10e440b8a34dfd657a90f2fcaa988c6b6a2f0da4` and
-SHA-256 `8d4795b8e4e327c6d841e15a2e3e6d88c45346256a43f8cdae8c26d92c806f7a`.
-If the provider changes the branch, review the checkpoint rather than bypassing
-those checks. DINO here is the ImageNet encoder, not a pathology foundation model.
+Weights are pinned and verified. UNI uses
+`timm.create_model("hf-hub:MahmoodLab/UNI@<pinned revision>", pretrained=True)`.
+The explicit model cache does not move authentication tokens into the project.
+Original UNI, DINO and ResNet use the same full-square 256-to-224 resize and
+ImageNet normalization for this comparison; this is a declared shared transform,
+not each model's default center-crop recipe. Features are L2-normalized per patch,
+without fitting statistics on held-out slides.
 
-The notebook composes the existing Hydra training profile, calls `src.train.run`,
-trains only the attention/classification head for one epoch on CPU, and evaluates
-the best validation checkpoint on the two held-out slides. It saves thumbnail
-sampling overlays, slide probabilities, a confusion table, metrics, one checkpoint
-and provenance in a fresh `outputs/wsi_classification_demo/<run>/` folder. It does
-not use the test set to select the checkpoint or tune settings. Eight selected
-patches do not represent all tissue; attention weights are not validated tissue
-localization. Declared whole-WSI checksums are retained but not recomputed by this
-bounded notebook.
+`src/data/feature_bags.py` streams bounded batches to resumable HDF5 caches in
+`outputs/wsi_features_v1`. Every feature row retains its coordinate and index.
+Cache reuse requires matching source metadata, coordinate hash, weights and
+preprocessing contract; partial files do not masquerade as completed bags.
+Existing coordinate exports retain their recorded preprocessing/calibration.
+The notebook's coverage table reports actual counts rather than a patch cap.
+
+### Curves and interpretation
+
+Twenty measured epochs are the default for frozen-feature MIL. The same seed,
+patient split, optimizer settings and epoch budget are used across encoders;
+feature dimensions and head parameter counts differ and are reported. Validation
+loss selects a checkpoint; the two held-out patients do not select hyperparameters.
+Training loss is measured during updates and validation after each epoch.
+
+Whole-slide maps show **MIL pooling attention** on all eligible coordinates.
+Colours are within-slide percentiles, not tumour probabilities or transformer
+self-attention. H/M/L locate the highest/median/lowest attention patches.
+Selected-patch maps differentiate the selected slide-class logit through one
+patch with all other embeddings retained. Raw gradients/weights and display
+scales are saved. Per-patch display normalization can amplify weak signals;
+these maps demonstrate sensitivity, not causal or histological validation.
+
+### Self-supervised references
+
+- Chen et al., [SimCLR](https://arxiv.org/abs/2002.05709), ICML 2020.
+- Caron et al., [DINO](https://arxiv.org/abs/2104.14294), ICCV 2021.
+- Grill et al., [BYOL](https://arxiv.org/abs/2006.07733), NeurIPS 2020.
+
+The short SSL recipe demonstrates a SimCLR-style objective with a tiny batch and
+AdamW, not a reproduction of the published training recipe. DINO weights are
+used for transfer; DINO and BYOL pretraining are references, not implementations
+claimed by this notebook. Adequate data, augmentations, budgets and evaluation
+must be established separately before interpreting representation quality.
 
 ## Bounded check on locally prepared NuInsSeg
 
@@ -243,7 +298,7 @@ biological validation. No artificial images or labels substitute for these runs.
 
 ## Implementation verification (2026-11-03)
 
-All seven table entries completed real CPU training (two optimizer steps), one
+The original seven baseline profiles completed real CPU training (two optimizer steps), one
 validation batch and best-checkpoint test evaluation on the bounded NuInsSeg
 selection. DINO profiles loaded the published pretrained safetensors weights.
 Standalone DINO-attention and U-Net evaluations completed, and ResNet mean MIL
@@ -255,5 +310,7 @@ paths, conflicting bag labels, changed class ordering, changed normalization,
 missing evaluation checkpoints and reused output directories. Ruff passed for
 the added Python code. Local logs/checkpoints are under
 `outputs/lightning_validation_20261103/`; outputs are ignored by Git. No synthetic
-image dataset was used. GPU/MPS execution, full-cohort training, scientific split
-validity and biological accuracy remain unverified.
+image dataset was used. That baseline check covered CPU execution only; it did
+not establish full-cohort convergence, scientific split validity or biological
+accuracy. The newer learning and frozen-feature recipes have separate execution
+receipts recording their own data, device and update budgets.

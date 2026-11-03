@@ -17,14 +17,43 @@ when repeating preprocessing.
 ```sh
 uv run --locked python scripts/download_examples.py
 uv run --locked python -m src.preprocess hydra.run.dir=outputs/small-demo
-uv run --locked python -m src.preprocess data=pen_examples hydra.run.dir=outputs/pen-demo
 ```
 
-The first command downloads the small public Aperio reader example and real
-CODAIT pen-mark images. Existing and downloaded examples are read with a 10 MB
-bound and must match the pinned SHA-256; new files are created exclusively.
-Raster examples support mask review but do not carry known WSI physical
-calibration, so calibrated coordinate export skips them.
+The first command downloads the small public Aperio reader example and legacy
+CODAIT illustrations. `red-pen.png`, `green-pen.png` and `blue-pen.png` are
+screenshots of already-isolated pen pixels on black, including window chrome;
+they are not original RGB slides and cannot validate artefact removal. Existing
+and downloaded files must match pinned SHA-256 values within a 10 MB read bound.
+The preprocessing notebook instead compares three methods on the original local
+TCGA-85-7698 WSI, which contains prominent red, green and blue pen marks.
+
+## Notebook input preparation
+
+Each demo's first setup cell calls `scripts/prepare_demo_inputs.py`. It verifies
+existing canonical inputs and calls repository downloaders only for missing
+assets. It never installs packages, overwrites invalid files or downloads gated
+UNI weights. Prepare the documented locked environments first.
+
+```sh
+uv run --locked python scripts/prepare_demo_inputs.py --demo preprocessing
+uv run --locked python scripts/prepare_demo_inputs.py --demo segmentation
+uv run --locked python scripts/prepare_demo_inputs.py --demo wsi-classification --prepare-coordinates
+```
+
+Use `--check-only` to inspect prerequisites without downloads or new outputs.
+Preprocessing needs two TCGA slides (about 461 MB); WSI classification needs the
+full approximately 3 GB roster and the pinned 87 MB DINO checkpoint. Segmentation
+requires the CytoNuke release (13 MB), the NuInsSeg archive (1.63 GB), and the
+HoVer-NeXt/Cellpose checkpoints. Downloads preserve source archives. The setup
+extracts only three NuInsSeg files for the notebook; it does not duplicate an
+already prepared dataset. Optional gated model access remains explicit.
+
+For classification, `--prepare-coordinates` creates a missing preprocessing run
+with the lung profile and all eligible coordinates, without patch PNGs.
+Existing complete runs retain their recorded method; incomplete directories are
+preserved and rejected. Select a fresh `--preprocessing-run` path if needed.
+Choosing which preprocessing run is scientifically appropriate remains the user's
+decision; availability alone does not validate a recipe.
 
 ## TCGA lung
 
@@ -36,16 +65,23 @@ of histological diversity; site can also confound classification.
 
 ```sh
 uv run --locked python scripts/download_tcga.py
-uv run --locked python -m src.preprocess data=tcga \
+uv run --locked python -m src.preprocess --config-name lung \
   export.pixel_slide_id=20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b \
-  hydra.run.dir=outputs/tcga-mpp05
-uv run --locked python scripts/verify_run.py outputs/tcga-mpp05 --check-regions
+  hydra.run.dir=outputs/tcga-lung
+uv run --locked python scripts/verify_run.py outputs/tcga-lung --check-regions
 ```
 
 The selected stem names TCGA-55-6972. It saves at most 128 actual 256-pixel PNGs;
 other slides retain complete eligible coordinate bags and small coverage previews.
 Omit `export.pixel_slide_id` to disable actual patch images for all slides.
-The default H&E workflow is the combined CODAIT/TIA/CLAM mask pipeline.
+The [lung profile](preprocessing.md#lung-tissue-anatomy-and-artefacts-need-separate-decisions)
+keeps the combined CODAIT/TIA/CLAM pipeline with settings intended to retain
+hollow/sparse structure:
+no dedicated hole filling or threshold-stage closing, 3-pixel binary-mask
+smoothing, smaller component filtering,
+10% retained-mask coverage and no centre-in-hole rejection. Real air spaces and
+suspected artefacts require separate interpretation; a mask hole is not an
+automatic reason to discard a patch. Existing runs are not regenerated.
 
 The downloader resumes partial files and verifies GDC file size and MD5 before
 promoting each download to `.svs`. Defaults permit four concurrent transfers,
@@ -67,6 +103,13 @@ Enrollment category is distinct from primary adjudicated disease category.
 Participant matching does not establish a shared biopsy, registered serial
 sections or spatial correspondence. Filename-derived sample labels are preserved
 as slide labels only.
+
+The [KPMP stain overview notebook](../notebooks/kpmp_stain_overview.ipynb) shows
+PAS, trichrome and silver thumbnails in three columns for each participant, with
+slide metadata and an explanation of brightfield RGB versus fluorescence
+channels. It reuses the canonical WSIs and preserves their source pixels;
+thumbnail resizing is for display, without stain normalization or H&E artefact
+filters. These separate slides are not spatially registered channels.
 
 ```sh
 uv run --locked python scripts/download_kpmp.py
@@ -109,12 +152,19 @@ rather than the WSI-level classification examples above. Their coordinates belon
 to individual patch images; they are not registered annotations for the TCGA or
 KPMP WSIs in this project.
 
-Download the versioned releases below, compare archive checksums with the release
-records, and retain source archives, metadata and attribution under each dataset's
-`source/` directory. Extract into `extracted/`; these datasets have no project
-Hydra preprocessing profile or dedicated downloader. Existing local `index.csv`
-files pair inputs using paths relative to their dataset directory, while
-`validation.json` records preparation checks. Generated conversions belong under
+The repository downloader pins the versioned releases below, verifies publisher
+sizes/checksums and preserves archives, metadata and attribution in `source/`.
+It extracts original paths into `extracted/`, refusing changed existing files.
+
+```sh
+uv run --locked python scripts/download_segmentation_data.py --dataset cytonuke
+uv run --locked python scripts/download_segmentation_data.py --dataset nuinsseg --demo-only
+```
+
+Omit `--demo-only` for the full NuInsSeg extraction. The flag still requires its
+full source archive. These datasets have no WSI Hydra preprocessing profile.
+Previously prepared local `index.csv` and `validation.json` files are optional
+preparation records; this downloader does not recreate them. Generated conversions belong under
 `outputs/annotations/`, leaving originals unchanged. See the
 [annotation-conversion guide](annotation-conversion.md) for bounded commands,
 GeoJSON/instance-TIFF exports and explicit overlap policies.

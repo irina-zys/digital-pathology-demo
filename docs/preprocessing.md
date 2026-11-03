@@ -8,17 +8,94 @@ Run CLI commands from the repository root. The
 select the project's `.venv/bin/python`, restart the kernel and run all cells.
 It discovers the project from ancestor directories, with an explicit project-path
 override available when launched elsewhere. New notebook outputs go under the
-repository's ignored `outputs/preprocessing_demo/` directory. The published notebook has
-no embedded execution output; running it creates the figures and provenance.
+repository's ignored `outputs/preprocessing_demo/` directory. Validated demo
+notebooks retain matching executed figures and tables in Git. Bulk run artifacts
+and detailed provenance remain under ignored `outputs/`. Code keeps portable
+project-relative paths when outputs are retained.
+
+**Preprocessing is a user choice and a scientific decision.** Defaults are
+illustrative settings, not a universally validated best recipe. Review the
+tradeoff between artefact retention and tissue loss for the stain, morphology and
+downstream question. Persist the chosen settings and evaluate representative
+failures as well as successful examples.
+
+The notebook's setup obtains missing inputs through repository scripts. It
+compares TIA Otsu, native CLAM segmentation and the combined recipe on a severely
+pen-marked WSI. Native CLAM uses the pinned CLI-default segmentation parameters at the best
+available native pyramid level for downsample 64. This is a workflow comparison,
+not a scale-matched accuracy ranking. Its tiling section
+exports the complete eligible HDF5/CSV coordinate grid and full coverage stitch;
+12 separate patches are read for visual QC. Sampled QC does not filter the full
+coordinate export or approve unsampled patches.
+
+Comparison figures keep one patch or region per row and matching views or methods
+in columns. The severe-artefact figure places original RGB, TIA Otsu, native CLAM
+and the combined recipe side by side. QC is shown on slide thumbnails: original, green tissue/blue hole contours, and
+sampled coverage decisions marked at their slide locations. Stain figures retain
+patch close-ups, with patch identity fixed across treatments and methods.
+
+## Lung tissue: anatomy and artefacts need separate decisions
+
+Alveolar air spaces and the thin tissue between them are normal lung architecture
+([SIU histology atlas](https://histology.siu.edu/intro/IN015b.htm)). A hole in a
+thresholded mask is only a topological observation. It does not distinguish an
+alveolus or lumen from a tear, processing gap, blank glass or exclusion caused by
+ink. Likewise, a small disconnected tissue component is not automatically debris.
+Review the original RGB and, where needed, the full-resolution WSI before deciding
+which structures to exclude. Low retained area is not by itself failed QC.
+
+The TCGA preprocessing notebook composes [configs/lung.yaml](../configs/lung.yaml),
+and new coordinate runs prepared by the notebook bootstrap use the same profile.
+It retains the combined CODAIT/TIA/saturation pipeline with these explicit choices:
+
+| Parameter | Generic H&E | Lung starting preset | Rationale |
+| --- | ---: | ---: | --- |
+| `masking.median_size` | 7 | 1 | Avoid median removal of narrow raster structures |
+| `masking.closing_size` | 3 | 0 | Avoid bridging air spaces at thresholding |
+| `masking.max_hole_area` | 16 | 0 | Do not fill holes merely because they are small |
+| `masking.smoothing_kernel_size` | 3 | 3 | Round binary-mask boundaries; review changes to septa and air spaces |
+| `artifacts.min_tissue_area` | 64 | 16 | Retain smaller disconnected fragments |
+| `export.min_tissue_fraction` | 0.60 | 0.10 | Admit useful sparse tissue surrounding air spaces |
+| `export.exclude_hole_centers` | true | false | Permit a patch centred in a hole when surrounding tissue meets coverage |
+
+Hole pixels that remain after binary-mask smoothing are background and do not
+contribute to the tissue fraction. Turning off CLAM's centre-in-hole rejection changes patch placement;
+it does not fill a hole, recolour RGB or declare the hole anatomical. The
+four-point outer-contour test, physical calibration and all-coordinate export
+remain in use. The mask can retain less total area while the patch grid becomes
+more inclusive.
+
+CODAIT colour rules still flag suspected pen/dark pixels separately. At a 10%
+coverage threshold, up to 90% of a selected footprint can be unretained in the
+thumbnail mask. This is not a measured high-resolution tissue fraction: the raw
+crop can include air spaces, glass or artefacts and is not guaranteed artefact-free.
+The 16-pixel component threshold can still discard genuine small fragments; set
+it to 0 only after reviewing the increased noise and contour workload. Kernel and
+area units are thumbnail pixels, not fixed physical sizes. These are scientific
+starting settings, not validated lung segmentation or a universal recipe.
+
+```sh
+uv run --locked python -m src.preprocess --config-name lung --cfg job --resolve
+uv run --locked python -m src.preprocess --config-name lung \
+  hydra.run.dir=outputs/tcga-lung
+```
+
+Selecting `data=tcga` alone changes the roster, not the masking/export policy.
+Use `--config-name lung` explicitly. Existing complete runs retain their recorded
+settings; choose a fresh output directory to apply the new profile. The notebook
+shows generic versus lung contours on the same thumbnail and the binary masks
+before and after the configured 3-pixel smoothing. The smoothed mask, after final
+artefact exclusions and component filtering, is used for lung tiling.
 
 ## Configuration and run lifecycle
 
 Hydra composes `configs/preprocess.yaml` with the `data`, `masking`, `artifacts`
-and `export` groups. `--config-name kpmp` replaces the data, masking and artefact
-groups for special stains. Preview the effective configuration before processing:
+and `export` groups. `--config-name lung` selects TCGA and overrides the hole,
+component and tiling settings above. `--config-name kpmp` replaces the data,
+masking and artefact groups for special stains. Preview the effective configuration before processing:
 
 ```sh
-uv run --locked python -m src.preprocess data=tcga --cfg job --resolve
+uv run --locked python -m src.preprocess --config-name lung --cfg job --resolve
 uv run --locked python -m src.preprocess --config-name kpmp --cfg job --resolve
 
 # A custom slide, smaller overview, no coordinate or pixel exports.
@@ -31,6 +108,11 @@ uv run --locked python -m src.preprocess masking=tia_otsu
 uv run --locked python -m src.preprocess masking=tia_morphological
 uv run --locked python -m src.preprocess masking=codait_od
 ```
+
+TIA morphology kernel and region sizes also require integer values. Selecting
+`masking=tia_otsu` still applies the configured repository artefact cleanup; it is
+not a standalone TIA baseline unless those exclusions are disabled. Likewise,
+`clam_saturation` is a local recipe, distinct from upstream CLAM segmentation.
 
 Slide-count, thumbnail-edge and pixel-budget bounds require integers; fractional
 or boolean values are rejected rather than silently rounded.
@@ -82,7 +164,7 @@ are read. Missing values stay missing; objective power does not supply guessed
 MPP. Physical slide extent includes background. Images remain scanner RGB; this
 demo does not apply ICC colour conversion.
 
-The default overview has a maximum edge of 1024 pixels. Reading is bounded to
+The CLI default overview has a maximum edge of 1024 pixels. Reading is bounded to
 16 million pixels per block and 100 million pixels per slide. If no whole pyramid
 level fits, the lowest usable level is resized in blocks; exceeding the total
 budget fails. Block boundaries can introduce interpolation differences.
@@ -90,7 +172,12 @@ Thumbnail masks lose small structures. Recorded independent x/y scale factors
 map them to level-0 coordinates. PNG/JPEG examples lack known WSI calibration
 and are excluded from calibrated coordinate export.
 
-## Default combined H&E masking
+The notebook also uses a 1024-pixel overview edge. Its main-slide budget is
+4 million pixels per block and per slide. The separate severe-artefact example
+allows 16 million for both limits and requires native CLAM's selected pyramid
+level to fit within 16 million pixels.
+
+## Generic combined H&E masking
 
 `src.pipeline.preprocess_masks(rgb, masking=..., artifacts=...)` takes ordinary
 mappings and returns candidate, clean and excluded masks, per-reason exclusions,
@@ -104,8 +191,12 @@ intermediate images and applied-threshold metadata. Source RGB is unchanged.
    and closing. This threshold is distinct from TIA's grayscale threshold.
 4. Fill enclosed 8-connected background components up to `max_hole_area`.
    Border-connected background and larger holes remain.
-5. Reapply CODAIT exclusions and remove small foreground components. Filling
-   can extend beyond the preliminary TIA gate but cannot restore exclusions.
+5. Smooth the binary candidate mask with one elliptical opening (erosion then
+   dilation), followed by one closing (dilation then erosion). The default
+   3-pixel kernel uses constant-zero outside-image borders.
+6. Reapply CODAIT exclusions and remove small foreground components. Median
+   filtering, closing, hole filling and smoothing can extend beyond the preliminary
+   TIA gate; final cleanup prevents restoration of CODAIT-excluded pixels.
 
 | Parameter | Default | Meaning |
 | --- | --- | --- |
@@ -115,7 +206,8 @@ intermediate images and applied-threshold metadata. Source RGB is unchanged.
 | `masking.use_otsu` | `true` | Fit saturation Otsu |
 | `masking.saturation_threshold` | `20` | Used when saturation Otsu is disabled |
 | `masking.closing_size` | `3` | Closing kernel edge; 0 disables |
-| `masking.max_hole_area` | `16` | Maximum enclosed area to fill; 0 disables |
+| `masking.max_hole_area` | `16` | Maximum enclosed area for the small-hole step; 0 disables |
+| `masking.smoothing_kernel_size` | `3` | Elliptical opening then closing; 0 or 1 disables, otherwise odd 3–31 |
 | `artifacts.min_tissue_area` | `64` | Minimum 8-connected tissue area; 0 disables |
 | `artifacts.pen_colors` | `[red,green,blue]` | Enabled colour rules; `[]` disables |
 | `artifacts.pen_thresholds` | `null` | CODAIT defaults or per-colour replacements |
@@ -126,12 +218,28 @@ CLAM's patch-scaled contour-area and maximum-hole-count policy. Closing can brid
 spaces independently of the hole limit. Air spaces may be real anatomy; these
 masks do not establish anatomical boundaries.
 
+The post-mask smoothing step is enabled in both the generic and lung presets. It
+rounds small boundary irregularities using binary erosion/dilation: pixels remain
+true or false, with no soft probabilities. It does not average neighbouring RGB
+values, blur the slide or inpaint image content. This preserves the original
+tissue appearance while changing which regions are selected. Source RGB stays
+unchanged; the earlier thresholding stages use separate working copies with
+constant-white exclusions. Opening can remove narrow tissue structures; closing can bridge gaps
+or fill holes even when `max_hole_area=0`. The same kernel covers different
+physical areas on different slide thumbnails. This is a scientific choice:
+inspect the notebook's `02c_mask_smoothing.png` before/after comparison and set
+`masking.smoothing_kernel_size=0` to disable smoothing when it damages genuine
+anatomy. The earlier CLAM-stage `closing_size` remains a separate setting. Saved
+`before_smoothing` and `smoothed_mask` stages plus added/removed pixel counts
+record its effect.
+
 ```sh
 uv run --locked python -m src.preprocess masking.max_hole_area=0 \
   masking.use_otsu=false masking.saturation_threshold=30 \
   hydra.run.dir=outputs/fixed-mask-demo
 
-uv run --locked python -m src.preprocess data=pen_examples \
+uv run --locked python -m src.preprocess \
+  'data.paths=[data/tcga/TCGA-LUSC/5048c79f-ed1d-4534-8da2-1a4d207b2371.svs]' \
   'artifacts.pen_thresholds={blue:[[60,100,210]]}' \
   hydra.run.dir=outputs/custom-pen-demo
 ```
@@ -152,9 +260,11 @@ at commit `53e2409d4a8189c682c173382964a85f114f923c`. It converts the final mask
 to level-0 tissue/child-hole contours; it does not segment the WSI again. Each
 contour anchors its own grid. The default `four_pt` accepts at least one of four
 interior probes. `four_pt_hard`, `center` and `basic` are also available. Patch
-centres strictly inside child holes are rejected; boundary padding is disabled.
-Stable duplicate removal and the default 60% retained-mask coverage threshold
-are explicit additions. `export.tiling_method=coverage_grid` retains the older
+centres strictly inside child holes are rejected when
+`export.exclude_hole_centers=true` (the generic default). The lung preset sets it
+to false while preserving all holes in mask coverage and visualizations. Boundary
+padding is disabled. Stable duplicate removal and the retained-mask coverage
+threshold (60% generic, 10% lung) are explicit additions. `export.tiling_method=coverage_grid` retains the older
 slide-wide grid for reproducibility.
 
 The default exports **all eligible 256-pixel coordinates at 0.5 µm/pixel**.
@@ -187,6 +297,8 @@ but the default does not produce HIPT's large-region inputs or model features.
 
 ## Output contract and visual review
 
+The Hydra CLI produces this completed-run layout for the Streamlit viewer:
+
 ```text
 outputs/<run>/
   manifest.json, resolved_config.yaml, index.html
@@ -207,11 +319,33 @@ outputs/<run>/
       process_list_autogen.csv
 ```
 
+The notebook calls the shared exporter directly and saves a teaching layout:
+
+```text
+outputs/preprocessing_demo/<run_id>/
+  provenance.json                    # Source, settings, calibration and export metadata
+  eligible_coordinates.csv           # Every eligible coordinate
+  sampled_tile_qc.csv, qc_tiles/      # Separate visual-QC sample (12 by default)
+  thumbnail.png, tissue_mask.png, stage_*.png
+  01_overview.png, 02_tissue_mask.png, 02c_mask_smoothing.png
+  03_full_coordinate_coverage.png, 04_thumbnail_qc.png, ...
+  severe_artifact_comparison/         # Original, three masks, comparison figures and provenance
+  stain_normalisation/               # Optional matched stain comparisons
+  datasets/<dataset>/                # Shared CLAM layout above; no exporter patch PNGs
+```
+
+It does not create a CLI `manifest.json`, Hydra metadata or an HTML report, so
+this notebook folder is not a completed preprocessing run in Streamlit. Open its
+figures directly; use the CLI for the dataset browser. Exported coordinate counts
+vary with the chosen slide and settings.
+
 HDF5 `coords` is an `N×2` integer array of level-0 top-left `(x,y)` locations.
 Its CLAM `patch_size` attribute is the **native source footprint**;
 `output_patch_size` records the resized image width. Other attributes include
 `patch_level=0`, downsample, level dimensions, name, save path, calibration,
-backend and upstream revision. `tissue_fraction` stores estimated retained-mask
+backend and upstream revision. Export schema 7 also records
+`exclude_hole_centers`; older exports without the field retain the original true
+policy. `tissue_fraction` stores estimated retained-mask
 coverage; `preview_indices` maps saved images into the full bag. Empty bags are
 explicit. The selected-slide `index.json` records each PNG's coordinate index.
 
@@ -230,6 +364,7 @@ The lossless `tissue_holes.png` changes only contour pixels: green tissue
 exteriors and blue holes, without fills. `hole_mask.png` identifies background
 not four-connected to the thumbnail boundary. It describes topology of the
 final mask, after configured cleanup, with no additional visualization cutoff.
+A blue hole contour is not an artefact label or an anatomical annotation.
 CLAM `masks/` uses a JPEG of this preview; `overlay.png` separately shows artefact
 exclusions. `stitches/` and `sampled_pixel_stitches/` represent different evidence:
 complete coordinate footprints versus bounded source-pixel samples.
@@ -257,7 +392,7 @@ uv run --locked python -m scripts.refresh_tissue_holes outputs/my-run
 | Combined masking | `src.pipeline`: `preprocess_masks` |
 | Calibrate/tile/read | `src.tiling`: `calibrated_patch_size`, `clam_coordinates`, `read_tile`, `contour_tile_mask` |
 | Export/review | `src.export`, `src.report` |
-| Shared arrays | `src.image_utils`: validation, component/hole operations, background preparation, PNG output |
+| Shared arrays | `src.image_utils`: validation, component/hole operations, `smooth_mask_edges`, background preparation, PNG output |
 
 Numerical helpers take explicit arrays and parameters, preserve their inputs,
 and do not create output directories. RGB is `uint8 H×W×3`, masks are `bool H×W`,
@@ -272,9 +407,13 @@ available. Use owning modules in new code. Legacy `tissue_mask` handles single
 mask recipes; use `preprocess_masks` for the combined recipe. `src/clam_tiling.py`
 is retained for historical callers; the default routes through upstream CLAM.
 
-The notebook reads at most 36 real tiles, including lower-coverage controls,
-with explicit candidate and per-read pixel budgets. Its QC requires thumbnail
-and raw saturation coverage. Laplacian variance is descriptive, not a validated
+The notebook reads 12 real tiles by default, selected at evenly spaced indices
+from the complete eligible coordinate grid. `N_QC_PATCHES` allows 4–36; fewer
+are read if the grid is smaller. The QC figure marks their decisions on the
+whole-slide thumbnail; it does not project coarse thumbnail masks over
+high-resolution patch close-ups. It does not deliberately select ineligible
+controls. Candidate and per-read pixel budgets are explicit. Sampled QC requires
+both thumbnail and raw saturation coverage. Laplacian variance is descriptive, not a validated
 focus threshold. The intentionally sampled retention rate does not estimate
 whole-slide quality. Settings and source coordinates are saved for review.
 
@@ -287,7 +426,8 @@ entrypoint. The notebook and other callers share these functions:
 | --- | --- |
 | `image_utils.mean_background_color(rgb, background_mask)` | Mean RGB over an explicit background sample; empty samples fail |
 | `image_utils.fill_background(rgb, tissue_mask, background_rgb)` | Copy RGB and replace non-tissue pixels with an explicit colour |
-| `tiling.contour_tile_mask(...)` | Project tissue/child-hole contours into a tile |
+| `pipeline.preprocess_masks(...)` | Build patch masks with explicitly fixed thresholds and cleanup settings |
+| `image_utils.smooth_mask_edges(...)` | Apply opening/closing to a binary mask; this notebook pads boolean edges before calling |
 | `normalization.prepare_stain_image(...)` | Validate pixel bounds and prepare original or constant-background RGB |
 | `normalization.fit_stain_normalizer(...)` | Fit a supported TIA method to a prepared reference |
 | `normalization.normalize_tile(...)` | Prepare source, transform and restore background when a mask is supplied |
@@ -303,7 +443,25 @@ parameter. `methods` and `max_pixels` are caller-configurable.
 
 ### Use the average background colour
 
-Use reviewed tissue contours, including child holes, to define tissue. Estimate
+The notebook builds its four normalization masks from the actual 256-pixel
+reference/source patches. It reuses the grayscale and saturation thresholds fitted
+on the slide thumbnail, with the same CODAIT colour exclusions. Median filtering
+is fixed to 1; threshold closing, dedicated hole filling and minimum component
+area are 0. This avoids applying thumbnail-scale area/kernel settings to patch
+pixels or enlarging coarse thumbnail contours into angular cutouts.
+
+`NORMALISATION_MASK_KERNEL_SIZE=3` applies one elliptical opening then closing
+in **output-patch pixels**, independently of the slide-mask kernel. It pads the
+boolean mask by four pixels using replicated edge values, then crops back and
+reapplies local artefact exclusions. Only mask values are padded: source RGB is
+not padded, blurred or inpainted. Edge replication avoids imposing a zero-valued
+frame but does not recover missing image context. The final patch masks control
+both reference/source preparation and background restoration; they do not change
+the slide mask, eligible coordinates or the shared background estimate. Provenance
+records the frozen thresholds, patch settings, kernel units, border policy,
+per-patch added/removed pixels, exclusions and RGB/mask hashes.
+
+Use reviewed boolean masks to define tissue. Estimate
 the **mean RGB of the slide's original non-tissue background**, excluding known
 artefact candidates. Round the mean to integer RGB and use that one colour in
 both the reference and every source tile, before fitting/transformation and when
@@ -332,13 +490,16 @@ The original-background path fits and transforms raw reference/source RGB with
 no masking or restoration. The other path replaces background with the shared
 mean colour. Every method uses identical reference and source tile identities.
 The notebook shows input preparation and a separate matched comparison for each
-method. Raw exports are unchanged; normalised PNG filenames/provenance distinguish
+method, always with one source patch per row. Two overview figures place the
+original and all methods in columns: `05c_stain_methods_unmasked.png` and
+`05c_stain_methods_constant_background.png`. Raw exports are unchanged; normalised PNG filenames/provenance distinguish
 `unmasked` and `constant_background`.
 
 Constant filling is **not** tissue-only statistical fitting. Reinhard's colour
 moments and stain-concentration percentiles include background pixels. The fill
-colour and background fraction can therefore still affect results. Coarse
-contours may remove real tissue, retain artefacts or fill anatomical spaces;
+colour and background fraction can therefore still affect results. Patch-level
+thresholds can lose pale tissue or retain artefacts; binary smoothing can change
+thin structures and anatomical spaces. This is not validated anatomical segmentation;
 unflagged stitching marks and misclassified tissue can bias the estimated mean.
 Review the background sampling mask and high-resolution tile borders. For a
 multi-slide study, explicitly choose/fix a common background convention with the
@@ -365,18 +526,20 @@ No additional packages are required.
 Use a fresh directory and a bounded subset of real slides:
 
 ```sh
-uv run --locked python -m src.preprocess data=tcga data.max_slides=1 \
+uv run --locked python -m src.preprocess --config-name lung data.max_slides=1 \
   export.pixel_slide_id=20c9afac-0d0c-4fcf-b3bf-a2beba3dd76b \
   'export.max_patches=[6]' hydra.run.dir=outputs/validation-combined-clam
 uv run --locked python scripts/verify_run.py outputs/validation-combined-clam --check-regions
 ```
 
 The checker verifies mask partitions, combined-stage order, exclusion preservation,
-bounded hole filling, coordinate eligibility, coverage and physical calibration.
+bounded small-hole filling, the recorded opening/closing step, coordinate
+eligibility, coverage and physical calibration.
 `--check-regions` compares saved source-pixel samples with fresh OpenSlide reads
-and the declared resampling. The notebook checks source integrity, tile bounds,
-QC decisions, saved-image equality and the constant-background contract. Restart
-and run all cells, then inspect metadata, masks, tile/QC sheets and stain figures.
+and the declared resampling. The notebook retains input-integrity and stage guards needed for execution,
+but has no separate engineering-verification section. Restart and run all cells,
+then inspect metadata, masks, full-coordinate coverage, thumbnail QC and stain
+figures. Use the CLI checker above for saved-run engineering verification.
 These checks establish mechanics on the exercised inputs, not biological accuracy,
 stain invariance, artefact-detection accuracy or diagnostic performance.
 

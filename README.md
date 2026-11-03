@@ -48,17 +48,21 @@ by dataset, participant or stain. Switch between original images, masks,
 artefact overlays, green tissue/blue hole contours and patch coverage. Recorded
 metadata can be downloaded as CSV. The server binds to localhost; telemetry is off.
 
-Each run also contains one `index.html` report and flat `overviews/<dataset>/`
+Each CLI preprocessing run also contains one `index.html` report and flat `overviews/<dataset>/`
 folders for Finder Gallery or Quick Look. Use [QuPath](docs/datasets.md#qupath)
 for navigation through the original WSI at higher resolution.
 
 ## What the default does
 
 For H&E, the pipeline applies CODAIT colour exclusions, TIA grayscale Otsu,
-CLAM-style saturation masking and small-hole cleanup, then final exclusions.
+CLAM-style saturation masking, small-hole cleanup and binary opening/closing,
+then final exclusions.
 Pinned upstream CLAM generates coordinates from the retained contours.
 The [KPMP profile](docs/datasets.md#kpmp-ckd) uses a separate saturation-mask
 recipe with H&E artefact rules disabled for its special stains.
+The [lung preset](docs/preprocessing.md#lung-tissue-anatomy-and-artefacts-need-separate-decisions)
+(`--config-name lung`) disables dedicated hole filling and admits sparse tissue patches. Lung
+air spaces can be anatomical; artefact removal needs a separate review.
 
 - Export every eligible **256-pixel** tile coordinate at a target **0.5 µm/pixel**,
   recording native footprints and effective resolution after rounding.
@@ -79,8 +83,9 @@ assumptions, HDF5 attributes, output folders and verification commands.
 | Review and share outputs through a browser | [Streamlit workflows](docs/streamlit-workflows.md) |
 | Obtain datasets and create QuPath projects | [Datasets](docs/datasets.md) |
 | Walk through metadata, masks, QC and optional stain comparisons | [Preprocessing demo](notebooks/preprocessing_demo.ipynb) |
+| Browse KPMP PAS, trichrome and silver stains | [KPMP stain overview](notebooks/kpmp_stain_overview.ipynb) |
 | Convert COCO polygons or instance masks to GeoJSON/TIFF | [Annotation conversion](docs/annotation-conversion.md) |
-| Compare pretrained nuclei predictions on two annotated patches | [Annotation and segmentation demo](notebooks/annotation_segmentation_demo.ipynb) · [Setup](docs/pretrained-models.md) |
+| Compare nuclei predictions and postprocessing on two annotated patches | [Annotation and segmentation demo](notebooks/annotation_segmentation_demo.ipynb) · [Setup](docs/pretrained-models.md) |
 | Classify bounded WSI bags with patient-disjoint splits | [WSI classification demo](notebooks/wsi_classification_demo.ipynb) |
 | Decompose and assemble encoders, decoders and heads | [Model components and Lightning](docs/model-components.md) |
 | Run bounded Lightning classification, MIL and segmentation | [Training](docs/training.md) |
@@ -100,9 +105,9 @@ outputs before downstream use. These examples check preprocessing mechanics;
 they do not establish biological accuracy or classifier performance. Keep all
 slides, stains and patches from one participant in the same evaluation split.
 
-Commit code, configuration, small public manifests, lockfiles and documentation.
-Slides, generated outputs, `.venv`, personal guidance and local configuration
-stay out of Git. Runtime artifacts can contain local paths; review them before
+Commit code, configuration, small public manifests, lockfiles, documentation and
+validated demo notebooks with matching executed outputs. Slides, bulk run artifacts
+under `outputs/`, `.venv`, personal guidance and local configuration stay out of Git. Runtime artifacts can contain local paths; review them before
 sharing separately. Preserve the upstream licences, including the vendored
 CLAM and HoVer-NeXt GPLv3 notices. Pretrained inference uses the optional setup
 above; annotation conversion and stain normalization use the base environment.

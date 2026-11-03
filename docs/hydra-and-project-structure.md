@@ -99,6 +99,12 @@ Changing `data=tcga` replaces the group's selected file. Changing
 `data.paths` mutually exclusive: when supplying explicit paths with the TCGA
 profile, also set `data.manifest=null`.
 
+The [lung profile](../configs/lung.yaml) composes `preprocess`, selects the TCGA
+roster and overrides masking, component and tiling parameters. Use
+`--config-name lung`; `data=tcga` alone selects only the roster. The preprocessing
+notebook uses Hydra's `compose(config_name="lung")` so those overrides agree
+with the CLI, rather than reading an inheriting YAML file as a flat mapping.
+
 A named experiment can replace several groups together.
 [configs/kpmp.yaml](../configs/kpmp.yaml) includes `preprocess`, then uses
 `override data`, `override masking` and `override artifacts` to select the CKD

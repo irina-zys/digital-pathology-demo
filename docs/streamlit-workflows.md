@@ -45,8 +45,9 @@ disables usage telemetry. This address works only on the machine running the
 server; it is not a link a colleague can open on their own computer.
 
 **A colleague runs their own copy.** Share the repository and the approved run
-artifacts separately. Git excludes slides, outputs and environments. Preserve the
-run's relative artifact paths, and place it under `outputs/` or point the viewer
+artifacts separately. Git excludes slides, bulk `outputs/` run directories and
+environments; validated figures/tables embedded in demo notebooks are retained.
+Preserve the run's relative artifact paths, and place it under `outputs/` or point the viewer
 to a directory containing completed runs:
 
 ```sh
