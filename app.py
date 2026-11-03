@@ -16,6 +16,7 @@ OUTPUTS = Path(os.environ.get("DIGITAL_PATHOLOGY_OUTPUTS", ROOT / "outputs")).ex
 PREVIEWS = {"Original": "thumbnail.png", "Retained mask": "clean_mask.png",
             "Filtered": "filtered.png", "Overlay": "overlay.png"}
 OPTIONAL_PREVIEWS = {"Tissue + holes": "tissue_holes.png"}
+STAGE_PREVIEWS = {"Before smoothing": "before_smoothing", "After smoothing": "smoothed_mask"}
 EXPORT_VIEWS = {f"{size} output px {label}": (size, kind)
                 for size in (256, 4096)
                 for label, kind in (("coordinate coverage", "coverage"), ("sampled pixels", "pixels"))}
@@ -61,6 +62,10 @@ def preview_path(run, slide, view):
     if view in OPTIONAL_PREVIEWS:
         path = artifact(run, str(Path(slide["folder"]) / OPTIONAL_PREVIEWS[view]))
         return path if path.is_file() else None
+    if view in STAGE_PREVIEWS:
+        relative = slide.get("preprocessing_stages", {}).get(STAGE_PREVIEWS[view])
+        path = artifact(run, relative) if relative else None
+        return path if path is not None and path.is_file() else None
     return export_preview(run, slide, *EXPORT_VIEWS[view])
 
 
@@ -226,10 +231,14 @@ def main():
             table = table[searchable.str.contains(query.strip(), case=False, regex=False)]
         available_views = list(PREVIEWS) + [view for view in OPTIONAL_PREVIEWS
             if any(preview_path(selected_run.parent, slide, view) for slide in manifest["slides"])]
+        available_views += [view for view in STAGE_PREVIEWS
+            if any(preview_path(selected_run.parent, slide, view) for slide in manifest["slides"])]
         available_views += [view for view, (size, kind) in EXPORT_VIEWS.items()
             if any(export_preview(selected_run.parent, slide, size, kind) for slide in manifest["slides"])]
         default_view = "Tissue + holes" if "Tissue + holes" in available_views else "Filtered"
         preview = st.selectbox("Thumbnail view", available_views, index=available_views.index(default_view))
+        if preview in STAGE_PREVIEWS:
+            st.caption("Smoothing views show candidate masks before final artefact exclusion and component cleanup. Retained mask shows the final selection.")
         columns = st.multiselect("Table columns", [c for c in table.columns if c not in {"_index", "source_path"}],
             default=["patient", "dataset", "stain", "sample_id", "objective_power", "mpp_x", "mpp_y", "width_px", "height_px", "levels", "vendor", "file_size_mb"])
         st.caption("Previews use existing small images. Full-resolution navigation remains available in QuPath. Unknown means the run did not record that metadata.")

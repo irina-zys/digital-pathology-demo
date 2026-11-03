@@ -174,11 +174,13 @@ def clam_contours(mask, dimensions):
 
 
 def clam_coordinates(slide, mask, size, *, limit=None, min_fraction=0.6,
-                     max_candidates=200_000, contour_fn="four_pt", max_contours=128):
+                     max_candidates=200_000, contour_fn="four_pt", max_contours=128,
+                     exclude_hole_centers=True):
     """Call upstream CLAM process_contour, then apply explicit mask-coverage QC.
 
     CLAM uses contour-origin grids, x-major order, four-point/centre checks and
-    patch-centre hole exclusion. Padding is disabled. All grids are budgeted
+    optional patch-centre hole exclusion. Holes always remain excluded from mask
+    coverage. Padding is disabled. All grids are budgeted
     before calling CLAM, which uses at most four coordinate workers per contour.
     Reads remain sequential. Duplicates across contours are removed stably.
     Returns (coords, coverage, eligible_count_before_optional_limit).
@@ -186,6 +188,8 @@ def clam_coordinates(slide, mask, size, *, limit=None, min_fraction=0.6,
     size, sy = _size_pair(size, "size")
     if size != sy:
         raise ValueError("Upstream CLAM tiling requires square source patches")
+    if not isinstance(exclude_hole_centers, (bool, np.bool_)):
+        raise ValueError("exclude_hole_centers must be a boolean")
     if contour_fn not in {"four_pt", "four_pt_hard", "center", "basic"}:
         raise ValueError("Unknown CLAM contour check")
     if not np.isfinite(min_fraction) or not 0 <= min_fraction <= 1:
@@ -211,7 +215,8 @@ def clam_coordinates(slide, mask, size, *, limit=None, min_fraction=0.6,
         if min(x + w, dimensions[0] - size + 1) <= x or min(y + h, dimensions[1] - size + 1) <= y:
             continue
         with contextlib.redirect_stdout(io.StringIO()) as messages:
-            assets, _ = slide.process_contour(contour, contour_holes, patch_level=0, save_path="",
+            assets, _ = slide.process_contour(contour, contour_holes if exclude_hole_centers else [],
+                                              patch_level=0, save_path="",
                                               patch_size=size, step_size=size, contour_fn=contour_fn,
                                               use_padding=False)
         logging.getLogger(__name__).debug(messages.getvalue())

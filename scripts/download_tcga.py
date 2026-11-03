@@ -150,6 +150,7 @@ def download(row):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--select-only", action="store_true")
+    parser.add_argument("--file-id", action="append", default=[], help="Download only this frozen-roster UUID; repeat to select several")
     parser.add_argument("--max-gb", type=float, default=10)
     parser.add_argument("--workers", type=int, choices=range(1, 5), default=4)
     args = parser.parse_args()
@@ -176,8 +177,14 @@ def main():
             raise ValueError("Invalid MD5")
         if int(row["file_size"]) <= 0:
             raise ValueError("Invalid size")
+    if args.file_id:
+        requested = set(args.file_id)
+        unknown = requested - {row["file_id"] for row in rows}
+        if unknown:
+            raise ValueError(f"Unknown file IDs in frozen roster: {sorted(unknown)}")
+        rows = [row for row in rows if row["file_id"] in requested]
     total = sum(int(row["file_size"]) for row in rows)
-    print(f"10 slides, {total / 1e9:.3f} GB; roster: {MANIFEST}", flush=True)
+    print(f"{len(rows)} slides, {total / 1e9:.3f} GB; roster: {MANIFEST}", flush=True)
     if total > args.max_gb * 1e9:
         raise ValueError("Roster exceeds download budget")
     if args.select_only:
@@ -187,7 +194,7 @@ def main():
         raise RuntimeError("Insufficient disk space including 2 GB headroom")
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         list(pool.map(download, rows))
-    print("All ten slides passed GDC size and MD5 verification.", flush=True)
+    print(f"All {len(rows)} selected slides passed GDC size and MD5 verification.", flush=True)
 
 
 if __name__ == "__main__":

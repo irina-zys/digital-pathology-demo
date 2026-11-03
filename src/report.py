@@ -15,7 +15,9 @@ def write_report(output, slides, method):
             panels.append(f'<figure><a href="{folder}/{filename}.png"><img loading="lazy" src="{folder}/{filename}.png" alt="{title}"></a><figcaption>{title}</figcaption></figure>')
         for name, title in (("codait_filtered", "After CODAIT filtering"),
                             ("tia_otsu", "TIA preliminary tissue"),
-                            ("clam_mask", "CLAM-style tissue"), ("filled_holes", "Filled small holes")):
+                            ("clam_mask", "CLAM-style tissue"), ("filled_holes", "Filled small holes"),
+                            ("before_smoothing", "Before morphological smoothing"),
+                            ("smoothed_mask", "After morphological smoothing")):
             path = slide.get("preprocessing_stages", {}).get(name)
             if path:
                 safe_path = escape(path, quote=True)

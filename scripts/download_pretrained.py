@@ -1,4 +1,4 @@
-"""Explicit acquisition of three pinned pretrained models under project data/models."""
+"""Explicit acquisition of pinned pretrained models under project data/models."""
 
 import argparse
 from datetime import datetime, timezone
@@ -32,6 +32,10 @@ UNI_REVISION = "b55a5ec6cade1a39edfe6534189a9b8ca7a022f0"
 UNI_FILE = "pytorch_model.bin"
 UNI_SIZE = 1213527781
 UNI_SHA256 = "56ef09b44a25dc5c7eedc55551b3d47bcd17659a7a33837cf9abc9ec4e2ffb40"
+DINO_REPO = "timm/vit_small_patch16_224.dino"
+DINO_REVISION = "10e440b8a34dfd657a90f2fcaa988c6b6a2f0da4"
+DINO_SIZE = 86676340
+DINO_SHA256 = "8d4795b8e4e327c6d841e15a2e3e6d88c45346256a43f8cdae8c26d92c806f7a"
 
 
 def canonical(path):
@@ -184,12 +188,41 @@ def uni():
     return path
 
 
+def dino():
+    """Populate the pinned project Hugging Face cache without duplicating weights."""
+    folder = MODELS / "huggingface/hub/models--timm--vit_small_patch16_224.dino"
+    blob = canonical(folder / "blobs" / DINO_SHA256)
+    reference = canonical(folder / "refs/main")
+    snapshot = folder / "snapshots" / DINO_REVISION / "model.safetensors"
+    if reference.exists() and reference.read_text().strip() != DINO_REVISION:
+        raise ValueError("Preserving DINO cache with a different main revision")
+    if snapshot.exists() or snapshot.is_symlink():
+        if not snapshot.is_file() or not snapshot.resolve().is_relative_to(folder.resolve()):
+            raise ValueError("Preserving invalid or escaping DINO checkpoint link")
+        verify(snapshot.resolve(), DINO_SIZE, DINO_SHA256)
+        # Reuse a regular snapshot file too, rather than creating a second weight copy.
+    else:
+        url = f"https://huggingface.co/{DINO_REPO}/resolve/{DINO_REVISION}/model.safetensors"
+        download(blob, url, DINO_SIZE, DINO_SHA256)
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        canonical(snapshot)
+        snapshot.symlink_to(os.path.relpath(blob, snapshot.parent))
+    if not reference.exists():
+        reference.parent.mkdir(parents=True, exist_ok=True)
+        with reference.open("x") as stream:
+            stream.write(DINO_REVISION + "\n")
+    receipt(folder / "download.json", {"model": "ImageNet DINO ViT-S/16", "repo_id": DINO_REPO,
+        "revision": DINO_REVISION, "checkpoint": str(snapshot.relative_to(MODELS)),
+        "bytes": DINO_SIZE, "sha256": DINO_SHA256})
+    return snapshot
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", choices=("hovernext", "cellpose", "uni"), required=True)
+    parser.add_argument("--model", choices=("hovernext", "cellpose", "uni", "dino"), required=True)
     args = parser.parse_args()
     try:
-        path = {"hovernext": hovernext, "cellpose": cellpose, "uni": uni}[args.model]()
+        path = {"hovernext": hovernext, "cellpose": cellpose, "uni": uni, "dino": dino}[args.model]()
     except (OSError, ValueError, RuntimeError) as error:
         parser.error(str(error))
     print(f"Verified {args.model}: {path}")

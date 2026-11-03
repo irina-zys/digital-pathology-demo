@@ -49,10 +49,12 @@ def run(cfg, output, *, evaluate=False):
     model_cfg = OmegaConf.to_container(cfg.model, resolve=True)
     if checkpoint and "encoder" in model_cfg:
         model_cfg["encoder"]["pretrained"] = False  # Checkpoint already contains encoder weights.
+        model_cfg["encoder"]["source_checkpoint"] = None
+        model_cfg["encoder"]["source_checkpoint_sha256"] = None
     model = instantiate(model_cfg, _convert_="all")
     if model.task != data.hparams.task:
         raise ValueError("Model and data tasks differ; select a matching experiment")
-    if model.task != "segmentation" and list(model.hparams.class_names) != list(data.hparams.class_names):
+    if model.task in {"classification", "mil"} and list(model.hparams.class_names) != list(data.hparams.class_names):
         raise ValueError("Model and data class_names differ")
     if "encoder" in model_cfg and model_cfg["encoder"]["name"] == "vit_small_patch16_224.dino":
         if data.hparams.image_size != 224:
@@ -81,7 +83,7 @@ def run(cfg, output, *, evaluate=False):
     if logger:
         logger.log_hyperparams(OmegaConf.to_container(cfg, resolve=True))
     LOG.info("Task=%s; samples/bags by split=%s; image size=%s; manifest=%s",
-             model.task, {k: len(v) for k, v in data.datasets.items()}, data.hparams.image_size, manifest_path)
+             model.task, {k: len(v) for k, v in data.datasets.items()}, data.hparams.get("image_size"), manifest_path)
     if evaluate:
         results = trainer.test(model=model, datamodule=data, ckpt_path=checkpoint)
         metrics = results[0]

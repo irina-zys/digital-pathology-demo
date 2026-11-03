@@ -90,6 +90,13 @@ def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
         invert=invert, batch_size=1, do_3D=False, augment=False, resample=True,
         bsize=224, niter=200, flow_threshold=0.4, cellprob_threshold=0.0,
         min_size=15, max_size_fraction=0.4)
+    from cellpose import models, transforms
+    # Use the pinned library's own channel/normalization functions for the teaching preview.
+    prepared = transforms.convert_image(rgb.copy(), list(channels), channel_axis=-1, nchan=model.nchan)
+    prepared = transforms.normalize_img(prepared[None, ...], **{**models.normalize_default, **settings["normalize"]})
+    normalized_input = prepared[0, :, :, 0].copy()
+    if normalized_input.shape != rgb.shape[:2] or not np.isfinite(normalized_input).all():
+        raise RuntimeError("Invalid normalized input preview")
     with torch.inference_mode():
         labels, flows, styles = model.eval(rgb.copy(), **settings)
     if (labels.shape != rgb.shape[:2] or labels.dtype.kind not in "iu" or
@@ -125,6 +132,12 @@ def run_cellpose(input_path, output_dir, *, checkpoint, checkpoint_sha256,
     if not np.array_equal(tifffile.imread(mask_path), labels):
         raise RuntimeError("Saved mask differs from inference labels")
     metadata["mask_sha256"] = sha256(mask_path)
+    preview_path = output_dir / "normalized_input.npy"
+    with preview_path.open("xb") as stream:
+        np.save(stream, normalized_input, allow_pickle=False)
+    metadata["normalized_input"] = {"path": preview_path.name, "sha256": sha256(preview_path),
+        "stage": "pinned Cellpose channel selection and normalization, before diameter scaling",
+        "channel": 0, "shape": list(normalized_input.shape), "dtype": str(normalized_input.dtype)}
     with (output_dir / "metadata.json").open("x") as stream:
         json.dump(metadata, stream, indent=2, allow_nan=False)
         stream.write("\n")

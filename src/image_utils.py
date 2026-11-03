@@ -86,6 +86,28 @@ def fill_small_holes(mask, max_area):
     return mask | fill[labels]
 
 
+def smooth_mask_edges(mask, kernel_size=0):
+    """Round binary mask edges with one elliptical opening followed by closing.
+
+    Sizes use mask pixels: 0/1 return an unchanged copy; odd sizes 3-31 enable
+    erosion/dilation. Outside-image pixels are zero. Narrow tissue and small gaps
+    can change; callers must reapply any protected exclusions afterwards.
+    """
+    validate_mask(mask)
+    if (isinstance(kernel_size, (bool, np.bool_)) or not isinstance(kernel_size, (int, np.integer))
+            or not (kernel_size in (0, 1) or 3 <= kernel_size <= 31 and kernel_size % 2 == 1)):
+        raise ValueError("smoothing kernel_size must be 0, 1 or an odd integer in 3-31")
+    if kernel_size <= 1:
+        return mask.copy()
+    size = int(kernel_size)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
+    opened = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_OPEN, kernel, iterations=1,
+                             borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    smoothed = cv2.morphologyEx(opened, cv2.MORPH_CLOSE, kernel, iterations=1,
+                               borderType=cv2.BORDER_CONSTANT, borderValue=0)
+    return smoothed.astype(bool)
+
+
 def fill_background(rgb, tissue_mask, background_rgb):
     """Copy RGB and replace non-tissue pixels with one explicit integer RGB colour."""
     validate_rgb(rgb)

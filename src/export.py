@@ -35,6 +35,9 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
     tiling_method = cfg.get("tiling_method", "clam_four_pt")
     if tiling_method not in {"clam_four_pt", "coverage_grid"}:
         raise ValueError("tiling_method must be clam_four_pt or coverage_grid")
+    exclude_hole_centers = cfg.get("exclude_hole_centers", True)
+    if not isinstance(exclude_hole_centers, bool):
+        raise ValueError("exclude_hole_centers must be a boolean")
     if not 0 < cfg.min_tissue_fraction <= 1 or not 1 <= cfg.max_candidates <= 1_000_000:
         raise ValueError("Invalid patch coverage or grid budget")
     if any(not isinstance(limit, int) or not 0 <= limit <= (1024 if size == 256 else 8)
@@ -83,7 +86,8 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
             if tiling_method == "clam_four_pt":
                 coords, coverage, eligible = clam_coordinates(reader, mask, source_size,
                     limit=coordinate_limit, min_fraction=cfg.min_tissue_fraction,
-                    max_candidates=cfg.max_candidates, contour_fn=cfg.contour_fn, max_contours=cfg.max_contours)
+                    max_candidates=cfg.max_candidates, contour_fn=cfg.contour_fn, max_contours=cfg.max_contours,
+                    exclude_hole_centers=exclude_hole_centers)
                 full_selection, capped_selection = "all_eligible_clam_contours", "evenly_spaced_in_clam_contour_order"
             else:
                 coords, coverage, eligible = coordinates(mask, (width, height), source_size,
@@ -114,9 +118,10 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
                                      "eligible_count": eligible, "selection": selection,
                                      "coordinate_limit": -1 if coordinate_limit is None else coordinate_limit,
                                      "max_candidates": cfg.max_candidates, "pixel_preview_limit": limit,
-                                     "pixel_preview_count": len(preview_indices), "export_schema_version": 6, "tiling_method": tiling_method,
+                                     "pixel_preview_count": len(preview_indices), "export_schema_version": 7, "tiling_method": tiling_method,
                                      "tiling_backend": backend, "clam_commit": CLAM_COMMIT,
                                      "contour_fn": cfg.contour_fn, "max_contours": cfg.max_contours, "use_padding": False,
+                                     "exclude_hole_centers": exclude_hole_centers,
                                      "pixel_slide_selected": save_pixels, "max_patch_read_pixels": cfg.max_patch_read_pixels,
                                      "min_tissue_fraction": cfg.min_tissue_fraction, "masking_method": masking_method})
                 if metadata["mpp"] is not None:
@@ -184,6 +189,7 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
                        "output_patch_size": size, "target_mpp": target_mpp,
                        "effective_mpp_x": effective_mpp[0], "effective_mpp_y": effective_mpp[1],
                        "masking_method": masking_method, "min_tissue_fraction": cfg.min_tissue_fraction,
+                       "exclude_hole_centers": exclude_hole_centers,
                        "max_patches": limit, "coordinate_limit": coordinate_limit,
                        "eligible_count": eligible, "exported_count": len(coords),
                        "pixel_preview_count": len(preview_indices), "pixel_slide_selected": save_pixels,
@@ -197,6 +203,7 @@ def export_slide(output, row, metadata, rgb, mask, segmentation_preview, cfg, ma
                     writer.writeheader()
                 writer.writerow(process)
             exports.append({"tiling_method": tiling_method, "tiling_backend": backend, "clam_commit": CLAM_COMMIT, "contour_fn": cfg.contour_fn,
+                            "exclude_hole_centers": exclude_hole_centers,
                             "folder": str(folder.relative_to(output)), "patch_size": size,
                             "source_patch_size": source_size, "native_mpp": native_mpp.tolist(),
                             "target_mpp": target_mpp, "effective_mpp": effective_mpp,

@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 
-def clam_candidates(clean, dimensions, size, max_candidates):
+def clam_candidates(clean, dimensions, size, max_candidates, exclude_hole_centers=True):
     """Reconstruct CLAM's contour-anchored four-point grid without production helpers."""
     import cv2
 
@@ -43,7 +43,8 @@ def clam_candidates(clean, dimensions, size, max_candidates):
                           for dx, dy in ((-shift, -shift), (shift, shift), (shift, -shift), (-shift, shift))]
                 if not any(cv2.pointPolygonTest(contour, point, False) >= 0 for point in points):
                     continue
-                if any(cv2.pointPolygonTest(hole, (x + size / 2, y + size / 2), False) > 0 for hole in holes):
+                if exclude_hole_centers and any(
+                        cv2.pointPolygonTest(hole, (x + size / 2, y + size / 2), False) > 0 for hole in holes):
                     continue
                 if (x, y) not in seen:
                     seen.add((x, y))
@@ -56,6 +57,8 @@ def verify_upstream_clam_coverage(handle, coords, clean, dimensions, size):
     width, height = dimensions
     mh, mw = clean.shape
     expected, fractions = [], []
+    exclude_hole_centers = handle.attrs.get("exclude_hole_centers", True)
+    assert isinstance(exclude_hole_centers, (bool, np.bool_))
     if handle.attrs.get("tiling_backend") == "CLAM":
         import cv2
 
@@ -83,7 +86,8 @@ def verify_upstream_clam_coverage(handle, coords, clean, dimensions, size):
                                (center[0] + shift, center[1] - shift), (center[0] - shift, center[1] + shift)])
                     inside = [cv2.pointPolygonTest(contour, tuple(map(float, point)), False) >= 0 for point in points]
                     accepted = all(inside) if mode == "four_pt_hard" else any(inside)
-                    in_hole = any(cv2.pointPolygonTest(hole, (x + size / 2, y + size / 2), False) > 0 for hole in holes)
+                    in_hole = exclude_hole_centers and any(
+                        cv2.pointPolygonTest(hole, (x + size / 2, y + size / 2), False) > 0 for hole in holes)
                     if not accepted or in_hole or (x, y) in seen:
                         continue
                     seen.add((x, y))
@@ -134,7 +138,8 @@ def verify_coordinate_coverage(handle, coords, clean, dimensions, size):
     method = handle.attrs.get("tiling_method", "coverage_grid")
     if method == "clam_four_pt":
         assert not handle.attrs["use_padding"]
-        candidates = clam_candidates(clean, dimensions, size, handle.attrs["max_candidates"])
+        candidates = clam_candidates(clean, dimensions, size, handle.attrs["max_candidates"],
+                                     exclude_hole_centers=handle.attrs.get("exclude_hole_centers", True))
         complete_selection = "all_eligible_clam_contour_grid"
     else:
         assert method == "coverage_grid", "Unknown tiling method"
@@ -223,8 +228,38 @@ def main():
             assert np.array_equal(stages["clam_input"][tia], stages["codait_filtered"][tia])
             before, filled = stages["before_holes"] > 0, stages["filled_holes"] > 0
             assert not np.any(before & filled)
-            assert np.array_equal(tissue, before | filled)
-            assert not np.any(clean & pre_excluded), "Hole filling must not restore CODAIT exclusions"
+            preprocessing = slide["preprocessing"]
+            stage_order = ["codait", "tia_otsu", "clam_saturation", "small_holes", "final_exclusion"]
+            smoothing_recorded = ("smoothing_kernel_size" in preprocessing or
+                                  "before_smoothing" in stages or "smoothed_mask" in stages)
+            if smoothing_recorded:
+                kernel_size = preprocessing["smoothing_kernel_size"]
+                assert type(kernel_size) is int and 0 <= kernel_size <= 31
+                assert kernel_size in (0, 1) or kernel_size % 2 == 1
+                for name in ("before_smoothing", "smoothed_mask"):
+                    assert stages[name].shape == tissue.shape
+                    assert set(np.unique(stages[name])).issubset({0, 255})
+                before_smoothing = stages["before_smoothing"] > 0
+                assert np.array_equal(before_smoothing, before | filled)
+                expected_smoothed = before_smoothing.astype(np.uint8)
+                operations = []
+                if kernel_size >= 3:
+                    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                    for operation in (cv2.MORPH_OPEN, cv2.MORPH_CLOSE):
+                        expected_smoothed = cv2.morphologyEx(expected_smoothed, operation, kernel,
+                            iterations=1, borderType=cv2.BORDER_CONSTANT, borderValue=0)
+                    operations = ["opening", "closing"]
+                expected_smoothed = expected_smoothed.astype(bool)
+                assert np.array_equal(stages["smoothed_mask"] > 0, expected_smoothed)
+                assert np.array_equal(tissue, expected_smoothed)
+                assert preprocessing["smoothing_operations"] == operations
+                assert preprocessing["smoothing_added_pixels"] == int((expected_smoothed & ~before_smoothing).sum())
+                assert preprocessing["smoothing_removed_pixels"] == int((before_smoothing & ~expected_smoothed).sum())
+                stage_order.insert(-1, "morphological_smoothing")
+            else:  # Earlier combined runs have no smoothing stage or metadata.
+                assert np.array_equal(tissue, before | filled)
+            assert preprocessing["order"] == stage_order
+            assert not np.any(clean & pre_excluded), "Cleanup must preserve CODAIT exclusions after hole filling/smoothing"
             assert int(filled.sum()) == slide["preprocessing"]["filled_hole_pixels"]
             if slide["preprocessing"]["max_hole_area_mask_pixels"] == 0:
                 assert not filled.any()
@@ -234,7 +269,8 @@ def main():
             ids = np.unique(labels[filled])
             assert not np.isin(ids, edge_labels).any()
             assert np.all(stats[ids, cv2.CC_STAT_AREA] <= slide["preprocessing"]["max_hole_area_mask_pixels"])
-            print(f"Verified combined stage order, exclusions and {int(filled.sum())} filled-hole pixels")
+            print(f"Verified combined stage order, exclusions, {int(filled.sum())} filled-hole pixels"
+                  f" and smoothing {preprocessing.get('smoothing_kernel_size', 'not recorded')}")
         if "hole_visualization" in slide:
             import cv2
 
@@ -315,6 +351,12 @@ def main():
                     if "tiling_method" in handle.attrs:
                         assert handle.attrs["tiling_method"] == layout["tiling_method"]
                         assert not handle.attrs["use_padding"]
+                    if handle.attrs.get("export_schema_version", 0) >= 7:
+                        assert "exclude_hole_centers" in handle.attrs and "exclude_hole_centers" in layout
+                    hole_policy = handle.attrs.get("exclude_hole_centers", True)
+                    assert isinstance(hole_policy, (bool, np.bool_))
+                    assert isinstance(layout.get("exclude_hole_centers", True), bool)
+                    assert hole_policy == layout.get("exclude_hole_centers", True)
                     saved_coverage = np.asarray(Image.open(args.run / layout["coverage_mask"]))
                     assert np.array_equal(saved_coverage, coverage.astype(np.uint8) * 255)
                     assert layout["stitch_type"] == "thumbnail_pixels_within_exported_coordinate_coverage"

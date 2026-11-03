@@ -33,6 +33,12 @@ def create_tissue_mask(rgb, *, method, kernel_size=5, min_region_size=64,
     if method in {"tia_otsu", "tia_morphological"}:
         from tiatoolbox.tools.tissuemask import MorphologicalMasker, OtsuTissueMasker
 
+        if method == "tia_morphological":
+            for name, value, minimum in (("kernel_size", kernel_size, 1),
+                                         ("min_region_size", min_region_size, 0)):
+                if (isinstance(value, (bool, np.bool_)) or not isinstance(value, (int, np.integer))
+                        or value < minimum):
+                    raise ValueError(f"{name} must be an integer >= {minimum}")
         masker = (OtsuTissueMasker() if method == "tia_otsu" else
                   MorphologicalMasker(kernel_size=int(kernel_size), min_region_size=int(min_region_size)))
         return masker.fit_transform(rgb[None])[0].astype(bool)

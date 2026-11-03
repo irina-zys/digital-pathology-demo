@@ -6,6 +6,7 @@ Cellpose runs in its isolated environment when called from the main project.
 
 import hashlib
 import json
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -115,11 +116,12 @@ def load_cellpose(checkpoint, checkpoint_sha256, *, device="cpu"):
 
 def run_cellpose_patch(rgb, output_dir, *, checkpoint, checkpoint_sha256=CELLPOSE_SHA256,
                        diameter=17.0, invert=False, channels=(0, 0),
-                       max_pixels=65_536, timeout_seconds=120):
+                       max_pixels=65_536, timeout_seconds=120, cache_dir=None):
     """Run one real patch in the isolated Cellpose environment and retain its outputs.
 
     The caller owns the output directory choice; existing outputs are refused.
     Diameter is measured in input pixels and is an explicit model assumption.
+    Optional cache_dir scopes the child process Numba cache to a writable directory.
     """
     import tifffile
 
@@ -155,7 +157,13 @@ def run_cellpose_patch(rgb, output_dir, *, checkpoint, checkpoint_sha256=CELLPOS
                    "--max-pixels", str(max_pixels)]
         if invert:
             command.append("--invert")
-        result = subprocess.run(command, cwd=PROJECT_ROOT, capture_output=True, text=True, timeout=timeout_seconds)
+        env = os.environ.copy()
+        if cache_dir is not None:
+            cache = Path(cache_dir).expanduser().resolve()
+            cache.mkdir(parents=True, exist_ok=True)
+            env["NUMBA_CACHE_DIR"] = str(cache)
+        result = subprocess.run(command, cwd=PROJECT_ROOT, capture_output=True, text=True,
+                                timeout=timeout_seconds, env=env)
     if result.returncode:
         raise RuntimeError(f"Cellpose worker failed (exit {result.returncode}): {result.stderr[-2000:]}")
     metadata = json.loads((output / "metadata.json").read_text())
