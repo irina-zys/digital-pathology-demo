@@ -30,7 +30,11 @@ coordinate export or approve unsampled patches.
 
 Comparison figures keep one patch or region per row and matching views or methods
 in columns. The severe-artefact figure places original RGB, TIA Otsu, native CLAM
-and the combined recipe side by side. QC is shown on slide thumbnails: original, green tissue/blue hole contours, and
+and the combined recipe side by side, with retained RGB above and cyan overlays
+of every excluded thumbnail pixel below. Exclusions may be glass, lung airspaces,
+artefacts or tissue. Native CLAM shows its actual projected green exterior and
+blue hole boundary lines; contour interiors are not colour-filled. These are
+display annotations, without RGB repair or inpainting. QC is shown on slide thumbnails: original, green tissue/blue hole contours, and
 sampled coverage decisions marked at their slide locations. Stain figures retain
 patch close-ups, with patch identity fixed across treatments and methods.
 
