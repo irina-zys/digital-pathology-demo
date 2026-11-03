@@ -15,6 +15,12 @@ dependencies = [
 
 [project.optional-dependencies]
 train = ["lightning>=2.5,<3"]
+pretrained = [
+    "efficientnet-pytorch==0.7.1",
+    "munch==4.0.0",
+    "pretrainedmodels==0.7.4",
+    "segmentation-models-pytorch==0.1.0",
+]
 
 [tool.uv]
 package = false

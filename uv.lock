@@ -592,6 +592,12 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+pretrained = [
+    { name = "efficientnet-pytorch" },
+    { name = "munch" },
+    { name = "pretrainedmodels" },
+    { name = "segmentation-models-pytorch" },
+]
 train = [
     { name = "lightning" },
 ]
@@ -603,16 +609,20 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "efficientnet-pytorch", marker = "extra == 'pretrained'", specifier = "==0.7.1" },
     { name = "h5py", specifier = ">=3.12,<4" },
     { name = "hydra-core", specifier = ">=1.3,<1.4" },
     { name = "lightning", marker = "extra == 'train'", specifier = ">=2.5,<3" },
+    { name = "munch", marker = "extra == 'pretrained'", specifier = "==4.0.0" },
     { name = "numpy", specifier = ">=2.0,<2.4" },
     { name = "opencv-python", specifier = ">=4.6,<5" },
     { name = "pillow", specifier = ">=10,<13" },
+    { name = "pretrainedmodels", marker = "extra == 'pretrained'", specifier = "==0.7.4" },
+    { name = "segmentation-models-pytorch", marker = "extra == 'pretrained'", specifier = "==0.1.0" },
     { name = "streamlit", specifier = ">=1.55,<2" },
     { name = "tiatoolbox", specifier = "==2.1.3" },
 ]
-provides-extras = ["train"]
+provides-extras = ["train", "pretrained"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "ruff", specifier = ">=0.17.3" }]
@@ -637,6 +647,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/25/71/80cc718ff6d7abfba
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl", hash = "sha256:2a3175ce74a06109ff9307d90a230f81215cbac9a751f4d1c6194644b8204f9d", size = 21592, upload-time = "2024-05-23T14:13:55.283Z" },
 ]
+
+[[package]]
+name = "efficientnet-pytorch"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "torch" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2e/a0/dd40b50aebf0028054b6b35062948da01123d7be38d08b6b1e5435df6363/efficientnet_pytorch-0.7.1.tar.gz", hash = "sha256:00b9b261effce59d2d47aae2ad238c29a2a65175470f41ada7ecac439b7c1ee1", size = 21012, upload-time = "2021-04-15T15:17:23.111Z" }
 
 [[package]]
 name = "executing"
@@ -1582,6 +1601,15 @@ wheels = [
 ]
 
 [[package]]
+name = "munch"
+version = "4.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e7/2b/45098135b5f9f13221820d90f9e0516e11a2a0f55012c13b081d202b782a/munch-4.0.0.tar.gz", hash = "sha256:542cb151461263216a4e37c3fd9afc425feeaf38aaa3025cd2a981fadb422235", size = 19089, upload-time = "2023-07-01T09:49:35.98Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/56/b3/7c69b37f03260a061883bec0e7b05be7117c1b1c85f5212c72c8c2bc3c8c/munch-4.0.0-py2.py3-none-any.whl", hash = "sha256:71033c45db9fb677a0b7eb517a4ce70ae09258490e419b0e7f00d1e386ecb1b4", size = 9950, upload-time = "2023-07-01T09:49:34.472Z" },
+]
+
+[[package]]
 name = "narwhals"
 version = "2.28.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2038,6 +2066,18 @@ sdist = { url = "https://files.pythonhosted.org/packages/9a/6e/886dc7c9d21e2d95a
 wheels = [
     { url = "https://files.pythonhosted.org/packages/93/41/f0aa003909ee77a9e7e55f8659abb635ca23ab0d022a449bbb18da87a1ef/platformdirs-4.14.3-py3-none-any.whl", hash = "sha256:cba2d05fe5e18b26b1fa6f376b8e6234c012abe1f8696c486fface7d0054e931", size = 35276, upload-time = "2026-11-01T16:27:31.498Z" },
 ]
+
+[[package]]
+name = "pretrainedmodels"
+version = "0.7.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "munch" },
+    { name = "torch" },
+    { name = "torchvision" },
+    { name = "tqdm" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/0e/be6a0e58447ac16c938799d49bfb5fb7a80ac35e137547fc6cee2c08c4cf/pretrainedmodels-0.7.4.tar.gz", hash = "sha256:7e77ead4619a3e11ab3c41982c8ad5b86edffe37c87fd2a37ec3c2cc6470b98a", size = 58821, upload-time = "2018-10-29T08:18:45.373Z" }
 
 [[package]]
 name = "prometheus-client"
@@ -2593,6 +2633,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/81/61/0470810c8a093cdacd4ba7504b8a218fd49ca070d79eca23a615f5d9a0b0/scipy-1.17.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:0cf46c8013fec9d3694dc572f0b54100c28405d55d3e2cb15e2895b25057996e", size = 37405953, upload-time = "2026-01-10T21:26:07.75Z" },
     { url = "https://files.pythonhosted.org/packages/92/ce/672ed546f96d5d41ae78c4b9b02006cedd0b3d6f2bf5bb76ea455c320c28/scipy-1.17.0-cp312-cp312-win_amd64.whl", hash = "sha256:0937a0b0d8d593a198cededd4c439a0ea216a3f36653901ea1f3e4be949056f8", size = 36328121, upload-time = "2026-01-10T21:26:16.509Z" },
     { url = "https://files.pythonhosted.org/packages/9d/21/38165845392cae67b61843a52c6455d47d0cc2a40dd495c89f4362944654/scipy-1.17.0-cp312-cp312-win_arm64.whl", hash = "sha256:f603d8a5518c7426414d1d8f82e253e454471de682ce5e39c29adb0df1efb86b", size = 24314368, upload-time = "2026-01-10T21:26:23.087Z" },
+]
+
+[[package]]
+name = "segmentation-models-pytorch"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "efficientnet-pytorch" },
+    { name = "pretrainedmodels" },
+    { name = "torchvision" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/89/f3/5e73a5942fff361dd79d36bbff73414fae1e273b02aa1ec89c1be148f9c4/segmentation_models_pytorch-0.1.0.tar.gz", hash = "sha256:dd4500710d9150c8b11b4f0c4e8c2020c8310aa257a1d1a7df8a19b9dbb4fd04", size = 23032, upload-time = "2019-12-09T14:09:31.002Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/70/88/763a25dfe076a9f30f33466b1bd0f2d31b915b88d4cb4481fe4043cf26b4/segmentation_models_pytorch-0.1.0-py3-none-any.whl", hash = "sha256:e328af0998363cd2d03b936e224e08c68e87da3f03f19a3f1f5fe78262f43c77", size = 42615, upload-time = "2019-12-09T14:09:27.36Z" },
 ]
 
 [[package]]
