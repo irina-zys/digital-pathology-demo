@@ -1,0 +1,6 @@
+# @package _global_
+defaults:
+  - finetune_resnet50
+model:
+  encoder:
+    name: vit_small_patch16_224.dino

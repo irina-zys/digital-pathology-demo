@@ -1,0 +1,12 @@
+# All exported eligible coordinates participate; no per-slide patch subsampling.
+models: [uni, dino, resnet50]
+seed: 42
+class_names: [LUAD, LUSC]
+epochs: 20
+lr: 0.001
+weight_decay: 0.0001
+attention_dim: 128
+batch_size: 32
+uni_batch_size: 8
+max_slide_seconds: 1800
+max_training_seconds: 600

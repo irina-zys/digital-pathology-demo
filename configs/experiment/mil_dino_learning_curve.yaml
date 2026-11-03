@@ -1,0 +1,10 @@
+# @package _global_
+# Same frozen encoder/optimizer; repeated measured epochs for the local WSI demo.
+defaults:
+  - mil_dino_attention
+
+trainer:
+  max_epochs: 20
+  max_time: '00:00:05:00'
+data:
+  augment: false

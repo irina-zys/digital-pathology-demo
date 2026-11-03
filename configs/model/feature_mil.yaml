@@ -1,0 +1,6 @@
+_target_: src.models.feature_mil.FeatureMILClassifier
+input_dim: ${data.input_dim}
+class_names: ${class_names}
+attention_dim: 128
+lr: 0.001
+weight_decay: 0.0001

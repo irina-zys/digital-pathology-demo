@@ -1,0 +1,9 @@
+_target_: src.data.wsi_ssl.WSIContrastiveDataModule
+manifest: ???
+data_root: .
+task: self_supervised
+class_names: ${class_names} # Source-label validation only; labels never enter the SSL objective.
+patches_per_slide: 2
+batch_size: 4
+num_workers: 0
+target_mpp: 0.5

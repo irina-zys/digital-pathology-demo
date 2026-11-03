@@ -1,3 +1,5 @@
+# Legacy CODAIT screenshots of already-isolated pen pixels, not original WSI RGB.
+# Use only for illustration/reader checks, not artefact-removal evaluation.
 paths: [data/demo/red-pen.png, data/demo/green-pen.png, data/demo/blue-pen.png]
 manifest: null
 max_slides: 3

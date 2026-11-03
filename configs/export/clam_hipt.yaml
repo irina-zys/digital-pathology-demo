@@ -2,6 +2,7 @@
 enabled: true
 tiling_method: clam_four_pt  # Actual pinned upstream CLAM, followed by retained-mask coverage QC.
 contour_fn: four_pt  # four_pt, four_pt_hard, center or basic.
+exclude_hole_centers: true  # CLAM placement only; holes always remain excluded from tissue coverage.
 max_contours: 128  # Bound CLAM's per-contour worker pools (at most four workers each).
 patch_sizes: [256]  # Output pixels at target_mpp.
 target_mpp: 0.5  # Physical calibration; approximately the conventional 20x scale.

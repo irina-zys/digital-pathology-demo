@@ -1,0 +1,14 @@
+# @package _global_
+# A tiny SimCLR-style mechanism demonstration, not the published training recipe.
+defaults:
+  - override /data: wsi_ssl
+  - override /model: simclr
+trainer:
+  max_epochs: 2
+  max_time: '00:00:05:00'
+  num_sanity_val_steps: 0
+callbacks:
+  encoder_audit:
+    _target_: src.training.callbacks.EncoderUpdateAudit
+    expect_update: true
+test: false

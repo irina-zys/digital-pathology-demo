@@ -1,0 +1,8 @@
+# @package _global_
+defaults:
+  - override /data: features
+  - override /model: feature_mil
+trainer:
+  max_epochs: 20
+  max_time: '00:00:10:00'
+  num_sanity_val_steps: 0

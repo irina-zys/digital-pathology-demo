@@ -1,0 +1,18 @@
+# Starting settings for sparse/hollow lung tissue, not a validated anatomy detector.
+defaults:
+  - preprocess
+  - override data: tcga
+  - _self_
+
+masking:
+  median_size: 1  # No saturation median smoothing: avoid erasing thin septa.
+  closing_size: 0  # Do not bridge anatomical air spaces at thresholding.
+  max_hole_area: 0  # A mask hole is not automatically an artefact.
+  smoothing_kernel_size: 3  # Binary-mask opening/closing only; review effects on septa and air spaces.
+
+artifacts:
+  min_tissue_area: 16  # Retain smaller fragments; mask-pixel area, still a heuristic.
+
+export:
+  min_tissue_fraction: 0.10  # Sparse septa can be useful; this is not an artefact-free guarantee.
+  exclude_hole_centers: false  # Keep holes in the mask; allow patches around genuine air spaces.
